@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MapMaker Fieldwork — Agent Build</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f7f8f4;
+      color: #1a1a1a;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .header {
+      background: #000;
+      border-bottom: 4px solid #FFCC00;
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .header-left { display: flex; align-items: baseline; gap: 16px; }
+    .header-title { color: white; font-size: 28px; font-weight: 500; letter-spacing: 0.5px; }
+    .header-sub { color: #FFCC00; font-size: 14px; letter-spacing: 0.5px; }
+    .build-badge {
+      background: #FFCC00; color: #000;
+      font-size: 11px; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      padding: 4px 10px; border-radius: 4px;
+    }
+
+    .container { max-width: 800px; margin: 32px auto; padding: 0 24px; }
+
+    .card {
+      background: white;
+      border-radius: 8px;
+      padding: 32px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      margin-bottom: 24px;
+    }
+
+    h2 { font-size: 18px; margin-bottom: 8px; color: #1a1a1a; }
+    .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; }
+
+    .dropzone {
+      border: 2px dashed #c4c4c4;
+      border-radius: 8px;
+      padding: 48px 24px;
+      text-align: center;
+      transition: all 0.2s ease;
+      cursor: pointer;
+      background: #fafafa;
+    }
+    .dropzone:hover, .dropzone.dragover {
+      border-color: #FFCC00;
+      background: #fffdf0;
+    }
+    .dropzone-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
+    .dropzone-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .dropzone-hint { color: #888; font-size: 14px; margin-bottom: 16px; }
+    .format-pill {
+      display: inline-block;
+      background: #f0f0f0; color: #555;
+      padding: 2px 10px; border-radius: 12px;
+      font-size: 12px; margin: 0 4px;
+    }
+
+    .btn {
+      background: #FFCC00; color: #000;
+      border: none; padding: 10px 24px;
+      border-radius: 6px; font-size: 14px;
+      font-weight: 600; cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .btn:hover { background: #f0bf00; }
+    .btn:disabled { background: #ddd; color: #999; cursor: not-allowed; }
+    .btn-secondary { background: white; color: #444; border: 1px solid #c4c4c4; }
+    .btn-secondary:hover { background: #f5f5f5; }
+    .btn-large { padding: 14px 32px; font-size: 16px; }
+    .btn-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+    .config-section { margin-bottom: 24px; }
+    .config-section h3 {
+      font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;
+      color: #888; margin-bottom: 12px;
+    }
+
+    .style-options {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .style-option {
+      border: 2px solid #ddd; border-radius: 6px;
+      padding: 14px; cursor: pointer;
+      transition: all 0.15s ease;
+      background: white; text-align: left;
+    }
+    .style-option:hover { border-color: #FFCC00; }
+    .style-option.selected { border-color: #FFCC00; background: #fffdf0; }
+    .style-option.disabled { opacity: 0.4; cursor: not-allowed; }
+    .style-option.disabled:hover { border-color: #ddd; }
+    .style-option-icon { font-size: 22px; margin-bottom: 6px; }
+    .style-option-name { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+    .style-option-hint { font-size: 12px; color: #888; }
+
+    .config-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 0; border-bottom: 1px solid #eee;
+    }
+    .config-row:last-of-type { border-bottom: none; }
+    .config-label { flex: 0 0 180px; color: #555; font-size: 14px; }
+    .config-icon { margin-right: 8px; }
+    .config-select {
+      flex: 1; padding: 8px 12px;
+      border: 1px solid #c4c4c4; border-radius: 4px;
+      background: white; font-size: 14px; cursor: pointer;
+    }
+    .config-summary {
+      color: #555; font-size: 13px;
+      padding: 12px; background: #f7f8f4;
+      border-radius: 4px; margin-top: 16px;
+    }
+    .auto-publish-banner {
+      color: #b78400; font-size: 13px;
+      font-style: italic; margin-top: 8px;
+    }
+
+    .progress { display: flex; align-items: center; gap: 12px; padding: 16px 0; }
+    .spinner {
+      width: 20px; height: 20px;
+      border: 2px solid #eee; border-top-color: #FFCC00;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .progress-text { color: #444; font-size: 14px; }
+    .progress-step-done { color: #888; font-size: 13px; padding: 2px 0 2px 32px; }
+    .progress-step-done::before { content: "✓ "; color: #2a8f37; }
+
+    .result-card {
+      background: linear-gradient(180deg, #FFCC00 0%, #f0bf00 100%);
+      color: #000; padding: 32px;
+      border-radius: 8px; text-align: center;
+    }
+    .result-title { font-size: 22px; font-weight: 600; margin-bottom: 8px; }
+    .result-detail { font-size: 14px; margin-bottom: 24px; opacity: 0.85; }
+    .result-cta {
+      display: inline-block; background: black; color: white;
+      padding: 14px 32px; border-radius: 6px;
+      font-size: 16px; font-weight: 600;
+      text-decoration: none; transition: opacity 0.15s ease;
+    }
+    .result-cta:hover { opacity: 0.85; }
+    .result-meta { margin-top: 16px; font-size: 12px; color: #555; font-family: monospace; }
+
+    .error {
+      background: #fff4f4; border-left: 4px solid #d33;
+      padding: 16px; border-radius: 4px;
+      color: #a22; font-size: 14px;
+    }
+    .error strong { display: block; margin-bottom: 4px; }
+
+    /* Agent-specific */
+    .agent-card {
+      background: #fffaeb;
+      border: 1px solid #f0d68a;
+      border-left: 4px solid #FFCC00;
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+    }
+    .agent-label {
+      font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #b78400;
+      font-weight: 700; margin-bottom: 10px;
+    }
+    .agent-message { font-size: 15px; line-height: 1.6; margin-bottom: 16px; color: #333; }
+    .agent-reply-input {
+      width: 100%; padding: 10px 12px;
+      border: 1px solid #f0d68a; border-radius: 6px;
+      font-size: 14px; margin-bottom: 12px; background: white;
+    }
+    .agent-reply-input:focus { outline: none; border-color: #FFCC00; }
+    .agent-progress { display: flex; align-items: center; gap: 12px; }
+    .agent-progress .progress-text { color: #b78400; }
+
+    .log-toggle { margin-top: 24px; font-size: 12px; color: #888; }
+    .log-toggle summary { cursor: pointer; }
+    .log {
+      background: #0f1115; color: #c9d1d9;
+      padding: 12px; border-radius: 6px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 11px; line-height: 1.5;
+      max-height: 200px; overflow-y: auto;
+      margin-top: 10px;
+    }
+    .log .ts { color: #6e7681; }
+    .log .ok { color: #7fc28b; }
+    .log .err { color: #f08b80; }
+    .log .agent { color: #ffcc73; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="header-title">MapMaker</div>
+    <div class="header-sub">fieldwork data upload</div>
+  </div>
+  <div class="build-badge">Agent build</div>
+</div>
+
+<div class="container">
+
+  <!-- STAGE 1: Upload -->
+  <div id="stage-upload" class="card">
+    <h2>Upload your data and see it in MapMaker</h2>
+    <p class="subtitle">Drop a CSV with latitude and longitude columns. We'll do the rest.</p>
+
+    <div id="dropZone" class="dropzone">
+      <div class="dropzone-icon">📍</div>
+      <div class="dropzone-title">Drop your spreadsheet here</div>
+      <div class="dropzone-hint">or click to browse</div>
+      <div><span class="format-pill">CSV</span></div>
+      <input type="file" id="fileInput" accept=".csv" style="display: none;">
+    </div>
+
+    <div class="btn-row" style="margin-top: 24px;">
+      <button id="sampleBtn" class="btn btn-secondary">Try a sample</button>
+      <span style="color: #888; font-size: 13px;">No file? Click here for a tree-survey demo.</span>
+    </div>
+
+    <p style="color: #888; font-size: 12px; margin-top: 20px; padding-top: 16px; border-top: 1px solid #eee;">
+      Up to 1000 rows per map. Larger datasets are best handled in a full ArcGIS Online account.
+    </p>
+    <p style="color: #888; font-size: 12px; margin-top: 8px;">
+      Published maps are public. Do not upload sensitive or private information.
+    </p>
+  </div>
+
+  <!-- STAGE 1B: Agent step (NEW) -->
+  <div id="stage-agent" class="card hidden">
+    <div class="agent-card" id="agentCard"></div>
+    <div class="btn-row">
+      <button id="agentStartOverBtn" class="btn btn-secondary">Start over</button>
+    </div>
+  </div>
+
+  <!-- STAGE 2: Configure -->
+  <div id="stage-configure" class="card hidden">
+    <h2>Looks good. Here's how we'll map it.</h2>
+    <p class="subtitle" id="configureSubtitle"></p>
+
+    <div class="config-section">
+      <h3>Map style</h3>
+      <div class="style-options" id="styleOptions"></div>
+    </div>
+
+    <div class="config-section" id="fieldsSection">
+      <h3>Fields</h3>
+      <div id="fieldsContainer"></div>
+    </div>
+
+    <div class="config-summary" id="configSummary"></div>
+    <div class="auto-publish-banner hidden" id="autoPublishBanner">Auto-publishing in 2 seconds…</div>
+
+    <div class="btn-row" style="margin-top: 24px;">
+      <button id="publishBtn" class="btn btn-large">Publish to MapMaker</button>
+      <button id="restartBtn" class="btn btn-secondary">Start over</button>
+    </div>
+  </div>
+
+  <!-- STAGE 2A: File too large -->
+  <div id="stage-toolarge" class="card hidden">
+    <h2>This file is a bit large</h2>
+    <p class="subtitle" id="toolargeSubtitle"></p>
+    <div class="btn-row" style="margin-top: 24px;">
+      <button id="truncateBtn" class="btn btn-large">Map first 1000 rows</button>
+      <button id="toolargeRestartBtn" class="btn btn-secondary">Try a different file</button>
+    </div>
+  </div>
+
+  <!-- STAGE 3: Publishing -->
+  <div id="stage-publishing" class="card hidden">
+    <h2>Publishing your map…</h2>
+    <p class="subtitle">This usually takes about 5 seconds.</p>
+    <div id="progressList"></div>
+  </div>
+
+  <!-- STAGE 4: Result -->
+  <div id="stage-result" class="card hidden" style="background: transparent; box-shadow: none; padding: 0;">
+    <div class="result-card">
+      <div class="result-title">Your map is ready 🎉</div>
+      <div class="result-detail" id="resultDetail"></div>
+      <a id="resultCta" class="result-cta" target="_blank" rel="noopener">Open in MapMaker</a>
+      <div class="result-meta" id="resultMeta"></div>
+    </div>
+    <div class="btn-row" style="margin-top: 24px; justify-content: center;">
+      <button id="anotherBtn" class="btn btn-secondary">Map another file</button>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div id="errorBox" class="card hidden">
+    <div class="error">
+      <strong>Something went wrong</strong>
+      <span id="errorText"></span>
+    </div>
+    <div class="btn-row" style="margin-top: 16px;">
+      <button id="errorRestartBtn" class="btn btn-secondary">Try again</button>
+    </div>
+  </div>
+
+  <details class="log-toggle">
+    <summary>Diagnostic log (agent build)</summary>
+    <div class="log" id="log"></div>
+  </details>
+
+</div>
+
+<script>
+  // -----------------------------------------------------------------------
+  // Configuration
+  // -----------------------------------------------------------------------
+  const BRIDGE_URL = "https://68c61fd12475ebdd804374cf052e0d.0e.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/dfe3048cccf84ed78ff9cd1e573d49f1/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=CKzxOsV_xJPL7sde92ypqb2dOIQ97FYyE8tsqRn0f9k";
+
+  // NEW: Copilot Studio agent endpoint
+  const AGENT_TOKEN_ENDPOINT = "https://68c61fd12475ebdd804374cf052e0d.0e.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr86a_Fieldworkdata/directline/token?api-version=2022-03-01-preview";
+  const AGENT_TIMEOUT_MS = 45000;
+
+  const NATGEO_BASEMAP = {
+    title: "National Geographic Style",
+    baseMapLayers: [
+      { id: "World_Hillshade", title: "World Hillshade", url: "https://services.arcgisonline.com/arcgis/rest/services/Elevation/World_Hillshade/MapServer", layerType: "ArcGISTiledMapServiceLayer", itemId: "1b243539f4514b6ba35e7d995890db1d", visibility: true, opacity: 1 },
+      { id: "NatGeoStyleBase", title: "National Geographic Style Base", url: "https://tiles.arcgis.com/tiles/P3ePLMYs2RVChkJx/arcgis/rest/services/NatGeoStyleBase/MapServer", layerType: "ArcGISTiledMapServiceLayer", itemId: "f9a070ff745b4d368b312eb647c53a4e", visibility: true, opacity: 1 },
+      { id: "NatGeoNoLabel", title: "National Geographic Style (no label)", styleUrl: "https://www.arcgis.com/sharing/rest/content/items/be90e1f3c0164cd0adc7920e1679c65f/resources/styles/root.json", itemId: "be90e1f3c0164cd0adc7920e1679c65f", layerType: "VectorTileLayer" }
+    ]
+  };
+
+  const PALETTE = [
+    [102, 194, 165, 255], [252, 141,  98, 255], [141, 160, 203, 255],
+    [231, 138, 195, 255], [166, 216,  84, 255], [255, 217,  47, 255],
+    [229, 196, 148, 255], [179, 179, 179, 255]
+  ];
+
+  const NUMERIC_TYPES = new Set(["esriFieldTypeInteger", "esriFieldTypeDouble", "esriFieldTypeSmallInteger"]);
+  const STRING_TYPES = new Set(["esriFieldTypeString"]);
+  const COORD_NAMES = new Set(["latitude", "longitude", "lat", "lon", "lng", "x", "y"]);
+  const OID_NAMES = new Set(["ObjectId", "OBJECTID", "FID"]);
+
+  const ANALYZE_URL = "https://www.arcgis.com/sharing/rest/content/features/analyze";
+  const GENERATE_URL = "https://www.arcgis.com/sharing/rest/content/features/generate";
+
+  const NONE_VALUE = "__none__";
+  const MAX_ROWS = 1000;
+
+  // Map style definitions
+  const STYLES = [
+    { id: "simple", name: "Map locations", icon: "📍", hint: "Just points on a map",
+      requires: {}, fields: ["label"] },
+    { id: "categorical", name: "Map by type", icon: "🏷️", hint: "e.g. mapping tree species, sentiment, qualitative data, etc.",
+      requires: { minCategorical: 1 }, fields: ["color", "label"] },
+    { id: "graduated", name: "Map by size", icon: "📏", hint: "e.g. height of a tree, traffic counts, noise in Db, etc.",
+      requires: { minNumeric: 1 }, fields: ["size", "label"] },
+    { id: "categorical_size", name: "Map by type & size", icon: "🎨", hint: "e.g. tree height as size, species as colour",
+      requires: { minCategorical: 1, minNumeric: 1 }, fields: ["color", "size", "label"] },
+    { id: "pie_chart", name: "Pie charts", icon: "🥧", hint: "e.g. litter surveys, plant species in a quadrat, traffic counts",
+      requires: { minNumeric: 3 }, fields: ["label"] },
+  ];
+
+  const FIELD_DEFS = {
+    color: { label: "Color points by", icon: "🎨", source: "categorical" },
+    size:  { label: "Size points by",  icon: "📏", source: "numeric" },
+    label: { label: "Label points with", icon: "🏷️", source: "categorical" },
+  };
+
+  const SAMPLE_CSV = `Species,DBH_cm,Longitude,Latitude
+Coast Live Oak,45,-117.1656,32.7114
+Eucalyptus,80,-117.1626,32.7093
+Jacaranda,30,-117.1601,32.7104
+Palm,25,-117.1592,32.7114
+Coast Live Oak,55,-117.1628,32.7114
+Eucalyptus,90,-117.1601,32.7083
+Jacaranda,35,-117.1610,32.7125
+Palm,20,-117.1610,32.7094
+Coast Live Oak,60,-117.1583,32.7083
+Eucalyptus,75,-117.1620,32.7104
+Magnolia,40,-117.1638,32.7104
+Palm,28,-117.1583,32.7104
+Coast Live Oak,50,-117.1638,32.7125
+Coral Tree,35,-117.1591,32.7125
+Eucalyptus,85,-117.1610,32.7114`;
+
+  // State
+  const state = {
+    csvBlob: null, displayName: null, fcLayer: null,
+    features: [], fields: [], numeric: [], categorical: [],
+    style: null, fieldChoices: { color: null, size: null, label: null },
+    isSample: false, autoPublishTimer: null,
+  };
+
+  // Stage management
+  const stages = {
+    upload:     document.getElementById("stage-upload"),
+    agent:      document.getElementById("stage-agent"),
+    configure:  document.getElementById("stage-configure"),
+    toolarge:   document.getElementById("stage-toolarge"),
+    publishing: document.getElementById("stage-publishing"),
+    result:     document.getElementById("stage-result"),
+    error:      document.getElementById("errorBox"),
+  };
+
+  function showStage(name) {
+    Object.entries(stages).forEach(([k, el]) => {
+      if (k === name) el.classList.remove("hidden");
+      else el.classList.add("hidden");
+    });
+  }
+
+  // Logging
+  const logEl = document.getElementById("log");
+  function log(msg, cls = "") {
+    const ts = new Date().toLocaleTimeString();
+    const line = document.createElement("div");
+    line.innerHTML = `<span class="ts">${escapeHtml(ts)}</span> <span class="${cls}">${escapeHtml(msg)}</span>`;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function escapeHtml(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // ----------------------------------------------------------------------
+  // NEW: Local check
+  // ----------------------------------------------------------------------
+  async function localCheckCsvBlob(csvBlob) {
+    const text = await csvBlob.text();
+    if (!text || !text.trim()) return { clean: false, reason: "empty file" };
+
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (lines.length < 2) return { clean: false, reason: "fewer than 2 non-empty lines" };
+
+    const headerLine = lines[0];
+    const commas = (headerLine.match(/,/g) || []).length;
+    const semis  = (headerLine.match(/;/g) || []).length;
+    const tabs   = (headerLine.match(/\t/g) || []).length;
+    if (semis > commas || tabs > commas) {
+      return { clean: false, reason: `delimiter looks like ${semis > commas ? "semicolon" : "tab"}` };
+    }
+
+    const headers = headerLine.split(",").map(h => h.trim().toLowerCase());
+    const latNames = ["lat", "latitude", "y", "y_coord", "ycoord"];
+    const lonNames = ["lon", "long", "longitude", "lng", "x", "x_coord", "xcoord"];
+    const latIdx = headers.findIndex(h => latNames.includes(h));
+    const lonIdx = headers.findIndex(h => lonNames.includes(h));
+    if (latIdx === -1 || lonIdx === -1) {
+      return { clean: false, reason: "no recognised lat/lon column headers" };
+    }
+
+    const sampleRows = lines.slice(1, Math.min(lines.length, 6));
+    let bad = 0;
+    for (const row of sampleRows) {
+      const cols = row.split(",");
+      const latVal = (cols[latIdx] || "").trim();
+      const lonVal = (cols[lonIdx] || "").trim();
+      if (!/^-?\d+(\.\d+)?$/.test(latVal) || !/^-?\d+(\.\d+)?$/.test(lonVal)) bad++;
+    }
+    if (bad > sampleRows.length / 2) {
+      return { clean: false, reason: "lat/lon values are not plain decimal numbers" };
+    }
+
+    return { clean: true, reason: "lat/lon columns present and values look numeric" };
+  }
+
+  // ----------------------------------------------------------------------
+  // NEW: Agent call via Direct Line REST
+  // ----------------------------------------------------------------------
+  async function callFieldworkAgent(csvText) {
+    log("agent: requesting Direct Line token…", "agent");
+    const tokenRes = await fetch(AGENT_TOKEN_ENDPOINT);
+    if (!tokenRes.ok) throw new Error(`Agent token HTTP ${tokenRes.status}`);
+    const { token } = await tokenRes.json();
+    log("agent: token received", "agent");
+
+    const convRes = await fetch("https://directline.botframework.com/v3/directline/conversations", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" }
+    });
+    if (!convRes.ok) throw new Error(`Agent conversation HTTP ${convRes.status}`);
+    const { conversationId } = await convRes.json();
+    log("agent: conversation " + conversationId.slice(0, 10) + "…", "agent");
+
+    const messageText = `Here is the CSV the teacher uploaded:\n\n${csvText}`;
+    const sendRes = await fetch(
+      `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`,
+      {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "message", from: { id: "user" }, text: messageText })
+      }
+    );
+    if (!sendRes.ok) throw new Error(`Agent send HTTP ${sendRes.status}`);
+    log("agent: message sent (" + messageText.length + " chars), waiting…", "agent");
+
+    const start = Date.now();
+    let watermark = null;
+    while (Date.now() - start < AGENT_TIMEOUT_MS) {
+      await sleep(800);
+      const url = `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities${watermark ? "?watermark=" + watermark : ""}`;
+      const actRes = await fetch(url, { headers: { "Authorization": "Bearer " + token } });
+      if (!actRes.ok) continue;
+      const data = await actRes.json();
+      watermark = data.watermark;
+      const botMsg = (data.activities || []).find(
+        a => a.type === "message" && a.from && a.from.role === "bot" && a.text
+      );
+      if (botMsg) {
+        log("agent: reply received (" + botMsg.text.length + " chars)", "agent");
+        return parseAgentJson(botMsg.text);
+      }
+    }
+    throw new Error("Agent timed out after " + (AGENT_TIMEOUT_MS / 1000) + "s");
+  }
+
+  function parseAgentJson(text) {
+    let s = text.trim()
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/, "")
+      .replace(/```\s*$/, "");
+    const first = s.indexOf("{"), last = s.lastIndexOf("}");
+    if (first !== -1 && last !== -1) s = s.slice(first, last + 1);
+    return JSON.parse(s);
+  }
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  // ----------------------------------------------------------------------
+  // NEW: Agent stage UI
+  // ----------------------------------------------------------------------
+  function renderAgentBusy(message) {
+    document.getElementById("agentCard").innerHTML = `
+      <div class="agent-label">Fieldwork assistant</div>
+      <div class="agent-progress">
+        <div class="spinner"></div>
+        <div class="progress-text">${escapeHtml(message)}</div>
+      </div>
+    `;
+    showStage("agent");
+  }
+
+  function renderAgentMessage({ message, primaryLabel, onPrimary, secondaryLabel, onSecondary, replyPlaceholder, onReply }) {
+    const replyInput = replyPlaceholder
+      ? `<input class="agent-reply-input" type="text" id="agentReplyInput" placeholder="${escapeHtml(replyPlaceholder)}">`
+      : "";
+    const secondary = secondaryLabel
+      ? `<button id="agentSecondaryBtn" class="btn btn-secondary">${escapeHtml(secondaryLabel)}</button>`
+      : "";
+
+    document.getElementById("agentCard").innerHTML = `
+      <div class="agent-label">Fieldwork assistant</div>
+      <div class="agent-message">${escapeHtml(message)}</div>
+      ${replyInput}
+      <div class="btn-row">
+        <button id="agentPrimaryBtn" class="btn">${escapeHtml(primaryLabel)}</button>
+        ${secondary}
+      </div>
+    `;
+    showStage("agent");
+
+    document.getElementById("agentPrimaryBtn").addEventListener("click", onPrimary);
+    if (secondaryLabel) document.getElementById("agentSecondaryBtn").addEventListener("click", onSecondary);
+    if (replyPlaceholder) {
+      const input = document.getElementById("agentReplyInput");
+      input.focus();
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          const v = input.value.trim();
+          if (v) onReply(v);
+        }
+      });
+    }
+  }
+
+  // ----------------------------------------------------------------------
+  // NEW: Entry point — replaces direct loadAndAnalyze
+  // ----------------------------------------------------------------------
+  async function handleIncomingFile(csvBlob, displayName) {
+    log("file received: " + displayName + " (" + csvBlob.size + " bytes)");
+    state.csvBlob = csvBlob;
+    state.displayName = displayName;
+
+    const check = await localCheckCsvBlob(csvBlob);
+    log("local check: " + (check.clean ? "CLEAN" : "needs agent") + " — " + check.reason,
+        check.clean ? "ok" : "");
+
+    if (check.clean) {
+      loadAndAnalyze(csvBlob, displayName);
+    } else {
+      runAgentFlow(csvBlob, displayName);
+    }
+  }
+
+  async function runAgentFlow(csvBlob, displayName) {
+    renderAgentBusy("Looking at your data…");
+    try {
+      const csvText = await csvBlob.text();
+      const result = await callFieldworkAgent(csvText);
+      log("agent result: status=" + result.status, "ok");
+
+      if (result.status === "fixed") {
+        const note = result.notes || "Cleaned up your data.";
+        const rowsKept = result.rows_kept ?? "?";
+        const rowsDropped = result.rows_dropped ?? 0;
+        const human = rowsDropped > 0
+          ? `${note} Mapping ${rowsKept} rows (${rowsDropped} skipped).`
+          : `${note} Mapping ${rowsKept} rows.`;
+
+        renderAgentMessage({
+          message: human,
+          primaryLabel: "Map it",
+          onPrimary: () => {
+            const cleanedBlob = new Blob([result.cleaned_csv], { type: "text/csv" });
+            loadAndAnalyze(cleanedBlob, displayName);
+          },
+          secondaryLabel: "Start over",
+          onSecondary: reset
+        });
+      } else if (result.status === "needs_input") {
+        renderAgentMessage({
+          message: result.question || "I need a bit more information about your file.",
+          primaryLabel: "Start over",
+          onPrimary: reset,
+          replyPlaceholder: "Type your answer and press Enter…",
+          onReply: (reply) => {
+            log("agent: teacher replied — re-asking with context", "agent");
+            const csvWithReply = `${csvText}\n\n[Teacher reply]: ${reply}`;
+            const replyBlob = new Blob([csvWithReply], { type: "text/csv" });
+            runAgentFlow(replyBlob, displayName);
+          }
+        });
+      } else {
+        throw new Error("Agent returned an unexpected response shape.");
+      }
+    } catch (err) {
+      log("agent call failed: " + err.message, "err");
+      renderAgentMessage({
+        message: "I couldn't reach the assistant. You can try mapping the file as-is, or start over.",
+        primaryLabel: "Try anyway",
+        onPrimary: () => loadAndAnalyze(csvBlob, displayName),
+        secondaryLabel: "Start over",
+        onSecondary: reset
+      });
+    }
+  }
+
+  // =====================================================================
+  // BELOW: original AGOL + bridge logic, unchanged
+  // =====================================================================
+
+  async function analyzeCSV(csvBlob) {
+    const fd = new FormData();
+    fd.append("f", "json");
+    fd.append("fileType", "csv");
+    fd.append("analyzeParameters", JSON.stringify({ enableGlobalGeocoding: false }));
+    fd.append("file", csvBlob, "upload.csv");
+    const r = await fetch(ANALYZE_URL, { method: "POST", body: fd });
+    if (!r.ok) throw new Error(`AGOL analyze HTTP ${r.status}`);
+    const data = await r.json();
+    if (data.error) throw new Error(`AGOL analyze: ${data.error.message || JSON.stringify(data.error)}`);
+    return data.publishParameters;
+  }
+
+  async function generateFeatures(csvBlob, publishParameters) {
+    const fd = new FormData();
+    fd.append("f", "json");
+    fd.append("fileType", "csv");
+    fd.append("publishParameters", JSON.stringify(publishParameters));
+    fd.append("file", csvBlob, "upload.csv");
+    const r = await fetch(GENERATE_URL, { method: "POST", body: fd });
+    if (!r.ok) throw new Error(`AGOL generate HTTP ${r.status}`);
+    const data = await r.json();
+    if (data.error) throw new Error(`AGOL generate: ${data.error.message || JSON.stringify(data.error)}`);
+    return data.featureCollection.layers[0];
+  }
+
+  function classifyColumns(fields, features) {
+    const numeric = [];
+    const categorical = [];
+    for (const f of fields) {
+      if (OID_NAMES.has(f.name)) continue;
+      if (COORD_NAMES.has(f.name.toLowerCase())) continue;
+      if (NUMERIC_TYPES.has(f.type)) {
+        numeric.push(f.name);
+      } else if (STRING_TYPES.has(f.type)) {
+        const unique = new Set();
+        for (const feat of features) {
+          const v = feat.attributes[f.name];
+          if (v !== null && v !== undefined && v !== "") unique.add(v);
+        }
+        if (unique.size >= 2 && unique.size <= 12) categorical.push(f.name);
+      }
+    }
+    return { numeric, categorical };
+  }
+
+  function isStyleAvailable(style, numeric, categorical) {
+    const req = style.requires;
+    if (req.minNumeric && numeric.length < req.minNumeric) return false;
+    if (req.minCategorical && categorical.length < req.minCategorical) return false;
+    return true;
+  }
+
+  const AUTO_PICK_ORDER = ["pie_chart", "categorical_size", "categorical", "graduated", "simple"];
+
+  function pickAutoStyle(numeric, categorical) {
+    for (const id of AUTO_PICK_ORDER) {
+      const style = STYLES.find(s => s.id === id);
+      if (style && isStyleAvailable(style, numeric, categorical)) return style;
+    }
+    return STYLES.find(s => s.id === "simple");
+  }
+
+  function pickAutoFields(style, numeric, categorical) {
+    const choices = { color: null, size: null, label: null };
+    if (style.fields.includes("color")) choices.color = categorical[0] || null;
+    if (style.fields.includes("size"))  choices.size  = numeric[0] || null;
+    if (style.fields.includes("label")) choices.label = categorical[0] || null;
+    return choices;
+  }
+
+  function buildSimpleSymbol(color, size) {
+    return {
+      type: "esriSMS", style: "esriSMSCircle",
+      color: color || [102, 194, 165, 200],
+      size: size || 12,
+      outline: { color: [255, 255, 255, 255], width: 1 }
+    };
+  }
+
+  function buildSizeVariable(field, features) {
+    const values = features.map(f => f.attributes[field]).filter(v => v !== null && !isNaN(v));
+    if (!values.length) return null;
+    return {
+      type: "sizeInfo", field,
+      minSize: 8, maxSize: 40,
+      minDataValue: Math.min(...values),
+      maxDataValue: Math.max(...values)
+    };
+  }
+
+  function buildPieChartRenderer(numericFields, features) {
+    const totals = features.map(f => {
+      let sum = 0;
+      for (const fld of numericFields) {
+        const v = f.attributes[fld];
+        if (typeof v === "number" && !isNaN(v)) sum += v;
+      }
+      f.attributes._pieTotal = sum;
+      return sum;
+    });
+    const minTotal = Math.min(...totals);
+    const maxTotal = Math.max(...totals);
+
+    return {
+      type: "pieChart",
+      attributes: numericFields.slice(0, 8).map((fld, i) => ({
+        field: fld,
+        color: PALETTE[i % PALETTE.length],
+        label: fld.replace(/_/g, " ")
+      })),
+      size: 24,
+      holePercentage: 0.4,
+      outline: { color: [255, 255, 255, 255], width: 0.5, type: "esriSLS", style: "esriSLSSolid" },
+      visualVariables: [{
+        type: "sizeInfo",
+        field: "_pieTotal",
+        minSize: 14,
+        maxSize: 48,
+        minDataValue: minTotal,
+        maxDataValue: maxTotal
+      }]
+    };
+  }
+
+  function buildUniqueRenderer(field, features) {
+    const unique = new Set();
+    for (const f of features) {
+      const v = f.attributes[field];
+      if (v !== null && v !== undefined && v !== "") unique.add(v);
+    }
+    const values = Array.from(unique).sort();
+    return {
+      type: "uniqueValue",
+      field1: field,
+      defaultSymbol: buildSimpleSymbol([179, 179, 179, 200], 12),
+      defaultLabel: "Other",
+      uniqueValueInfos: values.map((val, i) => ({
+        value: val,
+        label: String(val),
+        symbol: buildSimpleSymbol(PALETTE[i % PALETTE.length], 12)
+      }))
+    };
+  }
+
+  function buildLabelingInfo(labelField) {
+    if (!labelField) return null;
+    return [{
+      labelExpression: `[${labelField}]`,
+      labelExpressionInfo: { expression: `$feature.${labelField}` },
+      labelPlacement: "esriServerPointLabelPlacementAboveCenter",
+      useCodedValues: true,
+      symbol: {
+        type: "esriTS",
+        color: [50, 50, 50, 255],
+        haloColor: [255, 255, 255, 255],
+        haloSize: 1.5,
+        font: { family: "Arial", size: 10, weight: "bold" }
+      },
+      minScale: 0, maxScale: 0
+    }];
+  }
+
+  function buildRenderer(style, choices, features, numeric) {
+    switch (style.id) {
+      case "pie_chart":
+        return buildPieChartRenderer(numeric, features);
+      case "categorical_size": {
+        const r = buildUniqueRenderer(choices.color, features);
+        const sv = buildSizeVariable(choices.size, features);
+        if (sv) r.visualVariables = [sv];
+        return r;
+      }
+      case "categorical":
+        return buildUniqueRenderer(choices.color, features);
+      case "graduated": {
+        const r = { type: "simple", symbol: buildSimpleSymbol(), label: choices.size.replace(/_/g, " ") };
+        const sv = buildSizeVariable(choices.size, features);
+        if (sv) r.visualVariables = [sv];
+        return r;
+      }
+      case "simple":
+      default:
+        return { type: "simple", symbol: buildSimpleSymbol() };
+    }
+  }
+
+  function buildPopupTitle(style, choices) {
+    switch (style.id) {
+      case "pie_chart":         return "Composition breakdown";
+      case "categorical_size":  return `{${choices.color}} – {${choices.size}}`;
+      case "categorical":       return `{${choices.color}}`;
+      case "graduated":         return `{${choices.size}}`;
+      case "simple":
+      default:                  return "Point";
+    }
+  }
+
+  function buildOperationalLayer(fcLayer, fields, features, numeric, style, choices, baseTitle) {
+    const renderer = buildRenderer(style, choices, features, numeric);
+    const labelingInfo = buildLabelingInfo(choices.label);
+    const popupTitle = buildPopupTitle(style, choices);
+
+    const popupFieldInfos = fields
+      .filter(f => !OID_NAMES.has(f.name) && !COORD_NAMES.has(f.name.toLowerCase()) && f.name !== "_pieTotal")
+      .map(f => ({ fieldName: f.name, label: f.name.replace(/_/g, " "), visible: true }));
+    const popupInfo = { title: popupTitle, fieldInfos: popupFieldInfos };
+
+    const drawingInfo = { renderer };
+    if (labelingInfo) {
+      drawingInfo.labelingInfo = labelingInfo;
+      drawingInfo.showLabels = true;
+    }
+
+    const extraFields = (style.id === "pie_chart")
+      ? [{ name: "_pieTotal", type: "esriFieldTypeDouble", alias: "_pieTotal", nullable: true, editable: false }]
+      : [];
+
+    const layerDef = {
+      ...fcLayer.layerDefinition,
+      fields: [...(fcLayer.layerDefinition.fields || []), ...extraFields],
+      drawingInfo,
+      showLegend: true,
+      ...(labelingInfo ? { hasLabels: true } : {})
+    };
+
+    return {
+      id: `fieldwork_${Date.now()}`,
+      title: baseTitle,
+      layerType: "ArcGISFeatureLayer",
+      visibility: true, opacity: 1,
+      showLegend: true,
+      popupInfo,
+      featureCollection: {
+        showLegend: true,
+        layers: [{
+          layerDefinition: layerDef,
+          featureSet: fcLayer.featureSet,
+          popupInfo,
+          showLegend: true
+        }]
+      }
+    };
+  }
+
+  function computeExtent(features) {
+    const xs = features.map(f => f.geometry.x);
+    const ys = features.map(f => f.geometry.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const padX = Math.max((maxX - minX) * 0.2, 100);
+    const padY = Math.max((maxY - minY) * 0.2, 100);
+    return {
+      xmin: minX - padX, ymin: minY - padY,
+      xmax: maxX + padX, ymax: maxY + padY,
+      spatialReference: { wkid: 102100, latestWkid: 3857 }
+    };
+  }
+
+  function buildWebMapJson(operationalLayer, extent) {
+    return {
+      operationalLayers: [operationalLayer],
+      baseMap: NATGEO_BASEMAP,
+      spatialReference: { wkid: 102100, latestWkid: 3857 },
+      initialState: { viewpoint: { targetGeometry: extent } },
+      timeZone: "system",
+      version: "2.33",
+      authoringApp: "MapMakerFieldworkPOC-Canvas-Agent",
+      authoringAppVersion: "0.41-m4-agent"
+    };
+  }
+
+  async function publishViaBridge(title, snippet, tags, webMapJson) {
+    const r = await fetch(BRIDGE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, snippet, tags, webMapJson })
+    });
+    if (!r.ok) throw new Error(`Bridge HTTP ${r.status}`);
+    const data = await r.json();
+    if (!data.mapMakerUrl) throw new Error("Bridge response missing mapMakerUrl");
+    return data;
+  }
+
+  function validateFeatures(features) {
+    if (features.length < 2) {
+      throw new Error("Your file needs at least 2 rows of data with coordinates.");
+    }
+    const withGeom = features.filter(f => f.geometry && typeof f.geometry.x === "number");
+    if (withGeom.length < features.length * 0.5) {
+      throw new Error("Most rows don't have valid coordinates. Make sure your CSV has columns named latitude/longitude (or lat/lon) with numeric values.");
+    }
+  }
+
+  async function countCSVRows(csvBlob) {
+    const text = await csvBlob.text();
+    const lines = text.replace(/\s+$/, "").split(/\r?\n/);
+    return Math.max(0, lines.length - 1);
+  }
+
+  async function truncateCSVBlob(csvBlob, maxRows) {
+    const text = await csvBlob.text();
+    const lines = text.replace(/\s+$/, "").split(/\r?\n/);
+    const header = lines[0];
+    const dataRows = lines.slice(1, 1 + maxRows);
+    const truncated = [header, ...dataRows].join("\n");
+    return new Blob([truncated], { type: "text/csv" });
+  }
+
+  function showTooLargePanel(rowCount) {
+    cancelAutoPublish();
+    showStage("toolarge");
+    document.getElementById("toolargeSubtitle").textContent =
+      `Your file has ${rowCount} rows. The MapMaker fieldwork upload supports up to ${MAX_ROWS} rows per map.`;
+  }
+
+  let pendingOversizedBlob = null;
+  let pendingDisplayName = null;
+
+  async function continueAfterTruncate() {
+    if (!pendingOversizedBlob) return;
+    const trimmedBlob = await truncateCSVBlob(pendingOversizedBlob, MAX_ROWS);
+    const name = pendingDisplayName;
+    pendingOversizedBlob = null;
+    pendingDisplayName = null;
+    loadAndAnalyze(trimmedBlob, name);
+  }
+
+  async function loadAndAnalyze(csvBlob, displayName) {
+    state.csvBlob = csvBlob;
+    state.displayName = displayName;
+
+    try {
+      const rowCount = await countCSVRows(csvBlob);
+      if (rowCount > MAX_ROWS) {
+        pendingOversizedBlob = csvBlob;
+        pendingDisplayName = displayName;
+        showTooLargePanel(rowCount);
+        return;
+      }
+    } catch (err) {
+      console.warn("Pre-flight row count failed:", err);
+    }
+
+    showStage("publishing");
+    const progressList = document.getElementById("progressList");
+    progressList.innerHTML = `<div class="progress"><div class="spinner"></div><div class="progress-text">Reading your file…</div></div>`;
+
+    try {
+      const publishParams = await analyzeCSV(csvBlob);
+      progressList.innerHTML += `<div class="progress-step-done">Your file was read</div>`;
+      progressList.innerHTML += `<div class="progress"><div class="spinner"></div><div class="progress-text">Detecting columns and coordinates…</div></div>`;
+
+      const fcLayer = await generateFeatures(csvBlob, publishParams);
+      state.fcLayer = fcLayer;
+      state.features = fcLayer.featureSet.features;
+      state.fields = fcLayer.layerDefinition.fields;
+      validateFeatures(state.features);
+
+      const { numeric, categorical } = classifyColumns(state.fields, state.features);
+      state.numeric = numeric;
+      state.categorical = categorical;
+      state.style = pickAutoStyle(numeric, categorical);
+      state.fieldChoices = pickAutoFields(state.style, numeric, categorical);
+
+      await new Promise(r => setTimeout(r, 400));
+      renderConfigurePanel();
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+
+  function renderConfigurePanel() {
+    showStage("configure");
+    document.getElementById("configureSubtitle").textContent =
+      `Found ${state.features.length} points · ${state.numeric.length} numeric, ${state.categorical.length} categorical columns.`;
+    renderStyleOptions();
+    renderFieldsPanel();
+    updateConfigSummary();
+    setupAutoPublish();
+  }
+
+  function renderStyleOptions() {
+    const container = document.getElementById("styleOptions");
+    container.innerHTML = "";
+    for (const style of STYLES) {
+      const available = isStyleAvailable(style, state.numeric, state.categorical);
+      const div = document.createElement("div");
+      div.className = "style-option" + (style.id === state.style.id ? " selected" : "") + (available ? "" : " disabled");
+      div.innerHTML = `
+        <div class="style-option-icon">${style.icon}</div>
+        <div class="style-option-name">${style.name}</div>
+        <div class="style-option-hint">${style.hint}</div>
+      `;
+      if (available) {
+        div.addEventListener("click", () => {
+          cancelAutoPublish();
+          state.style = style;
+          state.fieldChoices = pickAutoFields(style, state.numeric, state.categorical);
+          renderStyleOptions();
+          renderFieldsPanel();
+          updateConfigSummary();
+        });
+      }
+      container.appendChild(div);
+    }
+  }
+
+  function renderFieldsPanel() {
+    const container = document.getElementById("fieldsContainer");
+    container.innerHTML = "";
+
+    if (!state.style.fields.length) {
+      document.getElementById("fieldsSection").classList.add("hidden");
+      return;
+    }
+    document.getElementById("fieldsSection").classList.remove("hidden");
+
+    for (const fieldKey of state.style.fields) {
+      const fieldDef = FIELD_DEFS[fieldKey];
+      if (!fieldDef) continue;
+      const sourceList = fieldDef.source === "numeric" ? state.numeric : state.categorical;
+
+      const row = document.createElement("div");
+      row.className = "config-row";
+
+      if (sourceList.length === 0) {
+        const hintText = fieldDef.source === "numeric"
+          ? "no numeric columns in your data"
+          : "no text columns in your data";
+        row.innerHTML = `
+          <div class="config-label"><span class="config-icon">${fieldDef.icon}</span>${fieldDef.label}</div>
+          <div style="flex: 1; color: #888; font-size: 13px; font-style: italic; padding: 8px 0;">${hintText}</div>
+        `;
+        container.appendChild(row);
+        state.fieldChoices[fieldKey] = null;
+        continue;
+      }
+
+      row.innerHTML = `
+        <div class="config-label"><span class="config-icon">${fieldDef.icon}</span>${fieldDef.label}</div>
+        <select class="config-select" data-field="${fieldKey}">
+          <option value="${NONE_VALUE}">— none —</option>
+          ${sourceList.map(opt => `<option value="${opt}">${opt.replace(/_/g, " ")}</option>`).join("")}
+        </select>
+      `;
+      const select = row.querySelector("select");
+      select.value = state.fieldChoices[fieldKey] || NONE_VALUE;
+      select.addEventListener("change", () => {
+        cancelAutoPublish();
+        state.fieldChoices[fieldKey] = select.value === NONE_VALUE ? null : select.value;
+        updateConfigSummary();
+      });
+      container.appendChild(row);
+    }
+  }
+
+  function updateConfigSummary() {
+    const c = state.fieldChoices;
+    let summary = "";
+    switch (state.style.id) {
+      case "pie_chart":
+        summary = `Each point will show a pie chart of ${state.numeric.length} numeric columns, sized by total.`;
+        break;
+      case "categorical_size":
+        summary = `Each point colored by ${c.color || "—"}, sized by ${c.size || "—"}.`;
+        break;
+      case "categorical":
+        summary = `Each point colored by ${c.color || "—"}.`;
+        break;
+      case "graduated":
+        summary = `Each point sized by ${c.size || "—"}.`;
+        break;
+      case "simple":
+        summary = `Each point shown as a simple marker.`;
+        break;
+    }
+    if (c.label) summary += ` Labels show ${c.label}.`;
+    document.getElementById("configSummary").textContent = summary;
+  }
+
+  function setupAutoPublish() {
+    const banner = document.getElementById("autoPublishBanner");
+    if (state.isSample) {
+      banner.classList.remove("hidden");
+      state.autoPublishTimer = setTimeout(() => {
+        if (!stages.configure.classList.contains("hidden")) {
+          state.isSample = false;
+          publishMap();
+        }
+      }, 2000);
+    } else {
+      banner.classList.add("hidden");
+    }
+  }
+
+  function cancelAutoPublish() {
+    if (state.autoPublishTimer) {
+      clearTimeout(state.autoPublishTimer);
+      state.autoPublishTimer = null;
+    }
+    state.isSample = false;
+    document.getElementById("autoPublishBanner").classList.add("hidden");
+  }
+
+  async function publishMap() {
+    showStage("publishing");
+    const progressList = document.getElementById("progressList");
+    progressList.innerHTML = `
+      <div class="progress-step-done">Your file was read</div>
+      <div class="progress-step-done">Columns detected</div>
+      <div class="progress"><div class="spinner"></div><div class="progress-text">Building your map…</div></div>
+    `;
+
+    try {
+      const baseTitle = state.displayName.replace(/\.csv$/i, "").replace(/_/g, " ");
+      const opLayer = buildOperationalLayer(
+        state.fcLayer, state.fields, state.features, state.numeric,
+        state.style, state.fieldChoices, baseTitle
+      );
+      const extent = computeExtent(state.features);
+      const webMapJson = buildWebMapJson(opLayer, extent);
+
+      progressList.innerHTML = `
+        <div class="progress-step-done">Your file was read</div>
+        <div class="progress-step-done">Columns detected</div>
+        <div class="progress-step-done">Map built</div>
+        <div class="progress"><div class="spinner"></div><div class="progress-text">Publishing to MapMaker…</div></div>
+      `;
+
+      const result = await publishViaBridge(
+        baseTitle,
+        `Fieldwork data: ${state.features.length} points (${state.style.id})`,
+        `mapmaker, fieldwork, ${state.style.id}, agent-build`,
+        webMapJson
+      );
+
+      showResult(result, state.features.length);
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+
+  function showResult(result, pointCount) {
+    showStage("result");
+    document.getElementById("resultDetail").textContent =
+      `${pointCount} points published as ${state.style.name.toLowerCase()}`;
+    document.getElementById("resultCta").href = result.mapMakerUrl;
+    document.getElementById("resultMeta").textContent = `Item ID: ${result.itemId}`;
+  }
+
+  function showError(message) {
+    showStage("error");
+    document.getElementById("errorText").textContent = message;
+  }
+
+  function reset() {
+    cancelAutoPublish();
+    pendingOversizedBlob = null;
+    pendingDisplayName = null;
+    Object.assign(state, {
+      csvBlob: null, displayName: null, fcLayer: null,
+      features: [], fields: [], numeric: [], categorical: [],
+      style: null, fieldChoices: { color: null, size: null, label: null },
+      isSample: false, autoPublishTimer: null,
+    });
+    showStage("upload");
+  }
+
+  // ----------------------------------------------------------------------
+  // Wire up — file inputs go through handleIncomingFile (was loadAndAnalyze)
+  // ----------------------------------------------------------------------
+  const dropZone = document.getElementById("dropZone");
+  const fileInput = document.getElementById("fileInput");
+
+  dropZone.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files[0];
+    if (file) handleIncomingFile(file, file.name);
+    fileInput.value = "";
+  });
+
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+  });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      showError("This tool only accepts CSV files. Please save your spreadsheet as CSV first.");
+      return;
+    }
+    handleIncomingFile(file, file.name);
+  });
+
+  document.getElementById("sampleBtn").addEventListener("click", () => {
+    state.isSample = true;
+    const blob = new Blob([SAMPLE_CSV], { type: "text/csv" });
+    handleIncomingFile(blob, "Sample Tree Survey.csv");
+  });
+
+  document.getElementById("publishBtn").addEventListener("click", () => {
+    cancelAutoPublish();
+    publishMap();
+  });
+  document.getElementById("restartBtn").addEventListener("click", reset);
+  document.getElementById("anotherBtn").addEventListener("click", reset);
+  document.getElementById("errorRestartBtn").addEventListener("click", reset);
+  document.getElementById("truncateBtn").addEventListener("click", continueAfterTruncate);
+  document.getElementById("toolargeRestartBtn").addEventListener("click", reset);
+  document.getElementById("agentStartOverBtn").addEventListener("click", reset);
+
+  log("ready. agent endpoint: …/" + AGENT_TOKEN_ENDPOINT.split("/").slice(-3, -1).join("/"));
+</script>
+
+</body>
+</html>
