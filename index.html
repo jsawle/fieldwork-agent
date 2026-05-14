@@ -335,7 +335,16 @@
   const AGENT_TOKEN_ENDPOINT = "https://68c61fd12475ebdd804374cf052e0d.0e.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr86a_Fieldworkdata/directline/token?api-version=2022-03-01-preview";
   const AGENT_TIMEOUT_MS = 45000;
 
-  const NATGEO_BASEMAP = {
+  // MapMaker's National Geographic Style basemap is itself a web map item.
+  // We fetch that item's baseMap definition at runtime and copy it in — this
+  // is the browser equivalent of the Python get_natgeo_basemap() fix. Using
+  // the real item means our published maps match MapMaker exactly AND the
+  // basemap gallery thumbnail resolves correctly (it comes from this item).
+  const NATGEO_BASEMAP_ITEM_ID = "a82ff7ce1c3a493f9d82aa89f5a1ddcf";
+
+  // Fallback only — used if the runtime fetch fails. This is the older
+  // hardcoded approximation; it renders but the gallery thumbnail is wrong.
+  const NATGEO_BASEMAP_FALLBACK = {
     title: "National Geographic Style",
     baseMapLayers: [
       { id: "World_Hillshade", title: "World Hillshade", url: "https://services.arcgisonline.com/arcgis/rest/services/Elevation/World_Hillshade/MapServer", layerType: "ArcGISTiledMapServiceLayer", itemId: "1b243539f4514b6ba35e7d995890db1d", visibility: true, opacity: 1 },
@@ -343,6 +352,31 @@
       { id: "NatGeoNoLabel", title: "National Geographic Style (no label)", styleUrl: "https://www.arcgis.com/sharing/rest/content/items/be90e1f3c0164cd0adc7920e1679c65f/resources/styles/root.json", itemId: "be90e1f3c0164cd0adc7920e1679c65f", layerType: "VectorTileLayer" }
     ]
   };
+
+  // Populated once, lazily, by getNatGeoBasemap().
+  let _natGeoBasemapCache = null;
+
+  // Fetch the baseMap block from MapMaker's NatGeo basemap web map item.
+  // Cached for the session. Falls back to the hardcoded version on any error.
+  async function getNatGeoBasemap() {
+    if (_natGeoBasemapCache) return _natGeoBasemapCache;
+    try {
+      const url = `https://www.arcgis.com/sharing/rest/content/items/${NATGEO_BASEMAP_ITEM_ID}/data?f=json`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const data = await r.json();
+      if (data && data.baseMap && Array.isArray(data.baseMap.baseMapLayers) && data.baseMap.baseMapLayers.length) {
+        _natGeoBasemapCache = data.baseMap;
+        log("basemap: loaded NatGeo basemap from item " + NATGEO_BASEMAP_ITEM_ID, "ok");
+        return _natGeoBasemapCache;
+      }
+      throw new Error("item data had no usable baseMap block");
+    } catch (e) {
+      log("basemap: could not fetch NatGeo basemap item (" + e.message + ") — using fallback", "err");
+      _natGeoBasemapCache = NATGEO_BASEMAP_FALLBACK;
+      return _natGeoBasemapCache;
+    }
+  }
 
   const PALETTE = [
     [102, 194, 165, 255], [252, 141,  98, 255], [141, 160, 203, 255],
@@ -1126,12 +1160,23 @@ Eucalyptus,85,-117.1610,32.7114`;
     return choices;
   }
 
+  // Alpha for point fills: 204/255 ≈ 80% opaque (20% transparent).
+  const POINT_FILL_ALPHA = 204;
+
   function buildSimpleSymbol(color, size) {
+    // Normalise whatever colour we're given to [r,g,b] and force the fill
+    // alpha to POINT_FILL_ALPHA, so every point is consistently 20% transparent
+    // regardless of which renderer/palette entry produced the colour.
+    const base = color || [102, 194, 165];
+    const fill = [base[0], base[1], base[2], POINT_FILL_ALPHA];
     return {
       type: "esriSMS", style: "esriSMSCircle",
-      color: color || [102, 194, 165, 200],
+      color: fill,
       size: size || 12,
-      outline: { color: [255, 255, 255, 255], width: 1 }
+      // Dark grey outline, slightly thicker than 1px so points lift off the
+      // busy NatGeo basemap. (ArcGIS esriSMS has no drop-shadow property;
+      // a defined dark outline is the supported way to add definition.)
+      outline: { color: [80, 80, 80, 255], width: 1.5 }
     };
   }
 
@@ -1390,10 +1435,11 @@ Eucalyptus,85,-117.1610,32.7114`;
     };
   }
 
-  function buildWebMapJson(operationalLayer, extent) {
+  async function buildWebMapJson(operationalLayer, extent) {
+    const baseMap = await getNatGeoBasemap();
     return {
       operationalLayers: [operationalLayer],
-      baseMap: NATGEO_BASEMAP,
+      baseMap: baseMap,
       spatialReference: { wkid: 102100, latestWkid: 3857 },
       initialState: { viewpoint: { targetGeometry: extent } },
       timeZone: "system",
@@ -1713,7 +1759,7 @@ Eucalyptus,85,-117.1610,32.7114`;
         state.style, state.fieldChoices, baseTitle
       );
       const extent = computeExtent(state.features);
-      const webMapJson = buildWebMapJson(opLayer, extent);
+      const webMapJson = await buildWebMapJson(opLayer, extent);
 
       progressList.innerHTML = `
         <div class="progress-step-done">Your file was read</div>
