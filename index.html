@@ -639,10 +639,49 @@ Eucalyptus,85,-117.1610,32.7114`;
         check.clean ? "ok" : "");
 
     if (check.clean) {
-      loadAndAnalyze(csvBlob, displayName);
+      // Clean files skip the agent — but still get coordinate rounding, so
+      // spurious precision is normalised for every file, not just messy ones.
+      const rounded = await roundCoordinatesInCsv(csvBlob);
+      loadAndAnalyze(rounded, displayName);
     } else {
       runAgentFlow(csvBlob, displayName);
     }
+  }
+
+  // Round latitude/longitude columns to 5 decimal places (~1m). Used on the
+  // clean-file path; the agent path does its own rounding inside applyFixes.
+  async function roundCoordinatesInCsv(csvBlob) {
+    const text = await csvBlob.text();
+    const lines = text.replace(/\r\n/g, "\n").split("\n");
+    if (lines.length < 2) return csvBlob;
+
+    const header = splitCsvLine(lines[0]).map(h => h.trim());
+    const latI = header.findIndex(h => ["latitude", "lat"].includes(h.toLowerCase()));
+    const lonI = header.findIndex(h => ["longitude", "lon", "long", "lng"].includes(h.toLowerCase()));
+    if (latI === -1 || lonI === -1) return csvBlob; // nothing to round
+
+    let changed = 0;
+    const out = [lines[0]];
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].trim() === "") { out.push(lines[i]); continue; }
+      const cells = splitCsvLine(lines[i]);
+      const lat = parseFloat(cells[latI]);
+      const lon = parseFloat(cells[lonI]);
+      if (isFinite(lat)) {
+        const r = String(Math.round(lat * 1e5) / 1e5);
+        if (r !== String(cells[latI]).trim()) changed++;
+        cells[latI] = r;
+      }
+      if (isFinite(lon)) {
+        cells[lonI] = String(Math.round(lon * 1e5) / 1e5);
+      }
+      out.push(cells.map(c => {
+        const s = String(c == null ? "" : c);
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      }).join(","));
+    }
+    if (changed > 0) log("rounded coordinates on " + changed + " row(s) to 5 dp", "ok");
+    return new Blob([out.join("\n")], { type: "text/csv" });
   }
 
   async function runAgentFlow(csvBlob, displayName) {
@@ -721,9 +760,10 @@ Eucalyptus,85,-117.1610,32.7114`;
   // ----------------------------------------------------------------------
   // NEW: applyFixes — executes the agent's fix list against the CSV locally.
   // The agent returns instructions; the canvas does the editing. This is what
-  // makes the design scale: the agent never has to reproduce the file.
+  // makes the design scale: the agent never has to reproduce the file, and
+  // never has to count rows (it proved unreliable at that on large files).
   //
-  // Operations are applied in a fixed safe order so row numbers stay stable:
+  // Operations are applied in a fixed safe order:
   //   1. set_delimiter        (re-split the whole file)
   //   2. set_header_row       (discard lines above the real header)
   //   3. strip_blank_rows     (remove empty rows)
@@ -732,11 +772,13 @@ Eucalyptus,85,-117.1610,32.7114`;
   //   6. swap_columns         (swap two whole columns)
   //   7. convert_dms          (per-column coordinate transform)
   //   8. convert_decimal_comma(per-column coordinate transform)
-  //   9. fix_cell             (single-cell corrections, by ORIGINAL row index)
-  //  10. drop_row             (row removals, by ORIGINAL row index)
+  //   9. clean_column         (per-column junk removal: trailing chars,
+  //                            internal spaces, label prefixes — the canvas
+  //                            scans the column and fixes every matching cell)
   //
-  // Cell/row ops reference the ORIGINAL file's row numbers. We carry an
-  // _origRow tag on every row through steps 1-8 so steps 9-10 can find them.
+  // Then the canvas does position-dependent work the agent can't be trusted with:
+  //  - drops any data row that STILL has an unparseable lat/lon coordinate
+  //  - rounds lat/lon to 5 decimal places (~1m; anything more is false precision)
   // ----------------------------------------------------------------------
   function applyFixes(csvText, fixes) {
     const byOp = (name) => fixes.filter(f => f && f.op === name);
@@ -856,28 +898,83 @@ Eucalyptus,85,-117.1610,32.7114`;
       }
     }
 
-    // --- 9. fix_cell (by ORIGINAL row number) ---
-    for (const op of byOp("fix_cell")) {
-      const target = dataRows.find(r => r.origLine === op.row);
-      if (target) {
-        const ci = colIndex(op.column);
-        if (ci !== -1) target.cells[ci] = String(op.to);
-      } else {
-        log("applyFixes: fix_cell target row " + op.row + " not found (already dropped?)", "err");
+    // --- 9. clean_column (per-column junk removal) ---
+    // The agent names a column and a problem TYPE; the canvas scans that
+    // column and fixes every matching cell. The agent never identifies rows.
+    for (const op of byOp("clean_column")) {
+      const ci = colIndex(op.column);
+      if (ci === -1) {
+        log("applyFixes: clean_column target column '" + op.column + "' not found", "err");
+        continue;
       }
-    }
-
-    // --- 10. drop_row (by ORIGINAL row number) ---
-    const dropRowNumbers = new Set(byOp("drop_row").map(op => op.row));
-    let rowsDropped = 0;
-    if (dropRowNumbers.size > 0) {
-      const before = dataRows.length;
-      dataRows = dataRows.filter(r => !dropRowNumbers.has(r.origLine));
-      rowsDropped += before - dataRows.length;
+      const problem = String(op.problem || "").trim();
+      for (const r of dataRows) {
+        let s = String(r.cells[ci] == null ? "" : r.cells[ci]);
+        switch (problem) {
+          case "trailing_comma":
+          case "trailing_chars":
+            // strip stray non-numeric junk from the ends of a coordinate value
+            s = s.replace(/^[\s,;]+/, "").replace(/[\s,;]+$/, "");
+            break;
+          case "internal_space":
+            s = s.replace(/\s+/g, "");
+            break;
+          case "label_prefix":
+            // "Lat: 51.5" -> "51.5"   "long=-0.1" -> "-0.1"
+            s = s.replace(/^[A-Za-z .:_-]*?(-?\d)/, "$1");
+            break;
+          case "whitespace":
+            s = s.trim();
+            break;
+          default:
+            // unknown problem type: at least trim it
+            s = s.trim();
+            log("applyFixes: clean_column unknown problem '" + problem + "' — trimmed only", "err");
+        }
+        r.cells[ci] = s;
+      }
     }
 
     // --- final tidy: strip stray surrounding whitespace on header names ---
     header = header.map(h => String(h).trim());
+
+    // ----------------------------------------------------------------------
+    // Canvas-driven position-dependent work — NOT agent-instructed.
+    // The agent can't reliably point at rows, so the canvas decides which
+    // rows to drop and rounds coordinates itself.
+    // ----------------------------------------------------------------------
+    const CLEAN_NUM = /^-?\d+(\.\d+)?$/;
+    const latI = header.findIndex(h => ["latitude", "lat"].includes(h.toLowerCase()));
+    const lonI = header.findIndex(h => ["longitude", "lon", "long", "lng"].includes(h.toLowerCase()));
+
+    let rowsDropped = 0;
+
+    if (latI !== -1 && lonI !== -1) {
+      // Drop any row whose coordinates still don't parse as plain decimals,
+      // even after all the fixes above. This is the safety net that stops a
+      // bad row reaching AGOL and producing a geometry-less feature.
+      const before = dataRows.length;
+      dataRows = dataRows.filter(r => {
+        const lat = String(r.cells[latI] == null ? "" : r.cells[latI]).trim();
+        const lon = String(r.cells[lonI] == null ? "" : r.cells[lonI]).trim();
+        return CLEAN_NUM.test(lat) && CLEAN_NUM.test(lon);
+      });
+      rowsDropped = before - dataRows.length;
+      if (rowsDropped > 0) {
+        log("applyFixes: dropped " + rowsDropped + " row(s) with unparseable coordinates", "err");
+      }
+
+      // Round lat/lon to 5 decimal places (~1 metre). More than that is
+      // false precision for fieldwork data and misleads students.
+      for (const r of dataRows) {
+        const lat = parseFloat(r.cells[latI]);
+        const lon = parseFloat(r.cells[lonI]);
+        if (isFinite(lat)) r.cells[latI] = String(Math.round(lat * 1e5) / 1e5);
+        if (isFinite(lon)) r.cells[lonI] = String(Math.round(lon * 1e5) / 1e5);
+      }
+    } else {
+      log("applyFixes: could not find latitude/longitude columns to validate — skipping coordinate check", "err");
+    }
 
     // --- emit ---
     const out = [cellsToCsvLine(header)];
