@@ -653,18 +653,38 @@ Eucalyptus,85,-117.1610,32.7114`;
       log("agent result: status=" + result.status, "ok");
 
       if (result.status === "fixed") {
+        const fixes = Array.isArray(result.fixes) ? result.fixes : [];
+        log("agent: " + fixes.length + " fix operation(s) returned", "agent");
+        fixes.forEach((fx, i) => log("  fix " + (i + 1) + ": " + JSON.stringify(fx), "agent"));
+
+        // Apply the fix list locally — the agent never sends data back, only instructions
+        let applied;
+        try {
+          applied = applyFixes(csvText, fixes);
+        } catch (fixErr) {
+          log("applyFixes failed: " + fixErr.message, "err");
+          renderAgentMessage({
+            message: "I worked out what was wrong with your file, but couldn't apply the fix automatically. You can try mapping it as-is, or start over.",
+            primaryLabel: "Try anyway",
+            onPrimary: () => loadAndAnalyze(csvBlob, displayName),
+            secondaryLabel: "Start over",
+            onSecondary: reset
+          });
+          return;
+        }
+
+        log("applyFixes: " + applied.rowsKept + " rows kept, " + applied.rowsDropped + " dropped", "ok");
+
         const note = result.notes || "Cleaned up your data.";
-        const rowsKept = result.rows_kept ?? "?";
-        const rowsDropped = result.rows_dropped ?? 0;
-        const human = rowsDropped > 0
-          ? `${note} Mapping ${rowsKept} rows (${rowsDropped} skipped).`
-          : `${note} Mapping ${rowsKept} rows.`;
+        const human = applied.rowsDropped > 0
+          ? `${note} Mapping ${applied.rowsKept} rows (${applied.rowsDropped} skipped).`
+          : `${note} Mapping ${applied.rowsKept} rows.`;
 
         renderAgentMessage({
           message: human,
           primaryLabel: "Map it",
           onPrimary: () => {
-            const cleanedBlob = new Blob([result.cleaned_csv], { type: "text/csv" });
+            const cleanedBlob = new Blob([applied.csv], { type: "text/csv" });
             loadAndAnalyze(cleanedBlob, displayName);
           },
           secondaryLabel: "Start over",
@@ -696,6 +716,211 @@ Eucalyptus,85,-117.1610,32.7114`;
         onSecondary: reset
       });
     }
+  }
+
+  // ----------------------------------------------------------------------
+  // NEW: applyFixes — executes the agent's fix list against the CSV locally.
+  // The agent returns instructions; the canvas does the editing. This is what
+  // makes the design scale: the agent never has to reproduce the file.
+  //
+  // Operations are applied in a fixed safe order so row numbers stay stable:
+  //   1. set_delimiter        (re-split the whole file)
+  //   2. set_header_row       (discard lines above the real header)
+  //   3. strip_blank_rows     (remove empty rows)
+  //   4. drop_empty_columns   (remove blank columns)
+  //   5. rename_columns       (header renames)
+  //   6. swap_columns         (swap two whole columns)
+  //   7. convert_dms          (per-column coordinate transform)
+  //   8. convert_decimal_comma(per-column coordinate transform)
+  //   9. fix_cell             (single-cell corrections, by ORIGINAL row index)
+  //  10. drop_row             (row removals, by ORIGINAL row index)
+  //
+  // Cell/row ops reference the ORIGINAL file's row numbers. We carry an
+  // _origRow tag on every row through steps 1-8 so steps 9-10 can find them.
+  // ----------------------------------------------------------------------
+  function applyFixes(csvText, fixes) {
+    const byOp = (name) => fixes.filter(f => f && f.op === name);
+    const firstOp = (name) => byOp(name)[0] || null;
+
+    // --- parse into rows of cells, tagging each data row with its original line number ---
+    function parseRows(text, delimiter) {
+      const lines = text.replace(/\r\n/g, "\n").split("\n");
+      // keep every line for now (including blanks) so original line numbers are accurate
+      return lines.map((line, idx) => ({
+        origLine: idx + 1,            // 1-indexed line number in the original file
+        cells: splitLine(line, delimiter),
+        raw: line
+      }));
+    }
+
+    function splitLine(line, delimiter) {
+      if (delimiter === ",") return splitCsvLine(line);
+      // simple split for non-comma delimiters (these files rarely have quoted fields)
+      if (delimiter === "tab") return line.split("\t");
+      return line.split(delimiter);
+    }
+
+    function cellsToCsvLine(cells) {
+      return cells.map(c => {
+        const s = String(c == null ? "" : c);
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      }).join(",");
+    }
+
+    // --- 1. delimiter ---
+    const delimOp = firstOp("set_delimiter");
+    const delimiter = delimOp ? (delimOp.from === "tab" ? "tab" : delimOp.from) : ",";
+
+    let rows = parseRows(csvText, delimiter);
+
+    // --- 2. header row ---
+    const headerOp = firstOp("set_header_row");
+    let headerLineNo = 1;
+    if (headerOp && Number.isInteger(headerOp.line) && headerOp.line >= 1) {
+      headerLineNo = headerOp.line;
+    } else {
+      // default: first non-blank line is the header
+      const firstNonBlank = rows.find(r => r.cells.some(c => String(c).trim() !== ""));
+      headerLineNo = firstNonBlank ? firstNonBlank.origLine : 1;
+    }
+    let headerRow = rows.find(r => r.origLine === headerLineNo);
+    if (!headerRow) throw new Error("header row line " + headerLineNo + " not found");
+    let dataRows = rows.filter(r => r.origLine > headerLineNo);
+
+    // --- 3. strip blank rows ---
+    if (byOp("strip_blank_rows").length > 0) {
+      dataRows = dataRows.filter(r => r.cells.some(c => String(c).trim() !== ""));
+    } else {
+      // even without the explicit op, a fully empty trailing line is noise
+      dataRows = dataRows.filter(r => r.raw.trim() !== "");
+    }
+
+    let header = headerRow.cells.slice();
+
+    // --- 4. drop empty columns ---
+    if (byOp("drop_empty_columns").length > 0) {
+      const keep = [];
+      for (let c = 0; c < header.length; c++) {
+        const headerBlank = String(header[c] || "").trim() === "";
+        const allDataBlank = dataRows.every(r => String(r.cells[c] == null ? "" : r.cells[c]).trim() === "");
+        if (!(headerBlank && allDataBlank)) keep.push(c);
+      }
+      header = keep.map(c => header[c]);
+      dataRows = dataRows.map(r => ({ ...r, cells: keep.map(c => r.cells[c]) }));
+    }
+
+    // --- 5. rename columns ---
+    for (const op of byOp("rename_columns")) {
+      if (op.map && typeof op.map === "object") {
+        header = header.map(h => {
+          const trimmed = String(h).trim();
+          return Object.prototype.hasOwnProperty.call(op.map, trimmed) ? op.map[trimmed] : h;
+        });
+      }
+    }
+
+    const colIndex = (name) => header.findIndex(h => String(h).trim().toLowerCase() === String(name).trim().toLowerCase());
+
+    // --- 6. swap columns ---
+    for (const op of byOp("swap_columns")) {
+      const ai = colIndex(op.a), bi = colIndex(op.b);
+      if (ai !== -1 && bi !== -1) {
+        for (const r of dataRows) {
+          const tmp = r.cells[ai];
+          r.cells[ai] = r.cells[bi];
+          r.cells[bi] = tmp;
+        }
+      }
+    }
+
+    // --- 7. convert DMS ---
+    for (const op of byOp("convert_dms")) {
+      const ci = colIndex(op.column);
+      if (ci !== -1) {
+        for (const r of dataRows) {
+          const v = dmsToDecimal(r.cells[ci]);
+          if (v !== null) r.cells[ci] = String(v);
+        }
+      }
+    }
+
+    // --- 8. convert decimal comma ---
+    for (const op of byOp("convert_decimal_comma")) {
+      const ci = colIndex(op.column);
+      if (ci !== -1) {
+        for (const r of dataRows) {
+          const s = String(r.cells[ci] == null ? "" : r.cells[ci]).trim();
+          // turn "4,9041" into "4.9041"; leave already-dotted values alone
+          if (/^-?\d+,\d+$/.test(s)) r.cells[ci] = s.replace(",", ".");
+        }
+      }
+    }
+
+    // --- 9. fix_cell (by ORIGINAL row number) ---
+    for (const op of byOp("fix_cell")) {
+      const target = dataRows.find(r => r.origLine === op.row);
+      if (target) {
+        const ci = colIndex(op.column);
+        if (ci !== -1) target.cells[ci] = String(op.to);
+      } else {
+        log("applyFixes: fix_cell target row " + op.row + " not found (already dropped?)", "err");
+      }
+    }
+
+    // --- 10. drop_row (by ORIGINAL row number) ---
+    const dropRowNumbers = new Set(byOp("drop_row").map(op => op.row));
+    let rowsDropped = 0;
+    if (dropRowNumbers.size > 0) {
+      const before = dataRows.length;
+      dataRows = dataRows.filter(r => !dropRowNumbers.has(r.origLine));
+      rowsDropped += before - dataRows.length;
+    }
+
+    // --- final tidy: strip stray surrounding whitespace on header names ---
+    header = header.map(h => String(h).trim());
+
+    // --- emit ---
+    const out = [cellsToCsvLine(header)];
+    for (const r of dataRows) out.push(cellsToCsvLine(r.cells));
+
+    return {
+      csv: out.join("\n"),
+      rowsKept: dataRows.length,
+      rowsDropped: rowsDropped
+    };
+  }
+
+  // Convert a degrees-minutes-seconds string to signed decimal degrees.
+  // Handles forms like:  51°30'27"N   51 30 27 N   -77° 53' 12"   N51.30.27
+  // Returns a Number, or null if it doesn't look like DMS.
+  function dmsToDecimal(value) {
+    if (value == null) return null;
+    let s = String(value).trim();
+    if (s === "") return null;
+
+    // If it's already a plain decimal, leave it (return null = "no change")
+    if (/^-?\d+(\.\d+)?$/.test(s)) return null;
+
+    // Hemisphere letter
+    let sign = 1;
+    const hemi = s.match(/[NSEWnsew]/);
+    if (hemi) {
+      const h = hemi[0].toUpperCase();
+      if (h === "S" || h === "W") sign = -1;
+    }
+    if (s.trim().startsWith("-")) sign = -1;
+
+    // Pull all numeric groups out
+    const nums = s.match(/\d+(\.\d+)?/g);
+    if (!nums || nums.length === 0) return null;
+
+    const deg = parseFloat(nums[0]) || 0;
+    const min = nums.length > 1 ? parseFloat(nums[1]) || 0 : 0;
+    const sec = nums.length > 2 ? parseFloat(nums[2]) || 0 : 0;
+
+    const decimal = sign * (deg + min / 60 + sec / 3600);
+    if (!isFinite(decimal)) return null;
+    return Math.round(decimal * 1e7) / 1e7;
   }
 
   // =====================================================================
