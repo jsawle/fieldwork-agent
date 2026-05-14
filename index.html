@@ -593,12 +593,15 @@ Eucalyptus,85,-117.1610,32.7114`;
     showStage("agent");
   }
 
-  function renderAgentMessage({ message, primaryLabel, onPrimary, secondaryLabel, onSecondary, replyPlaceholder, onReply }) {
+  function renderAgentMessage({ message, primaryLabel, onPrimary, secondaryLabel, onSecondary, extraLabel, onExtra, replyPlaceholder, onReply }) {
     const replyInput = replyPlaceholder
       ? `<input class="agent-reply-input" type="text" id="agentReplyInput" placeholder="${escapeHtml(replyPlaceholder)}">`
       : "";
     const secondary = secondaryLabel
       ? `<button id="agentSecondaryBtn" class="btn btn-secondary">${escapeHtml(secondaryLabel)}</button>`
+      : "";
+    const extra = extraLabel
+      ? `<button id="agentExtraBtn" class="btn btn-secondary">${escapeHtml(extraLabel)}</button>`
       : "";
 
     document.getElementById("agentCard").innerHTML = `
@@ -608,12 +611,14 @@ Eucalyptus,85,-117.1610,32.7114`;
       <div class="btn-row">
         <button id="agentPrimaryBtn" class="btn">${escapeHtml(primaryLabel)}</button>
         ${secondary}
+        ${extra}
       </div>
     `;
     showStage("agent");
 
     document.getElementById("agentPrimaryBtn").addEventListener("click", onPrimary);
     if (secondaryLabel) document.getElementById("agentSecondaryBtn").addEventListener("click", onSecondary);
+    if (extraLabel) document.getElementById("agentExtraBtn").addEventListener("click", onExtra);
     if (replyPlaceholder) {
       const input = document.getElementById("agentReplyInput");
       input.focus();
@@ -624,6 +629,20 @@ Eucalyptus,85,-117.1610,32.7114`;
         }
       });
     }
+  }
+
+  // TEMPORARY DIAGNOSTIC: download a string as a file, so we can inspect
+  // exactly what applyFixes produces before it goes to AGOL.
+  function downloadText(filename, text) {
+    const blob = new Blob([text], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   // ----------------------------------------------------------------------
@@ -713,6 +732,12 @@ Eucalyptus,85,-117.1610,32.7114`;
         }
 
         log("applyFixes: " + applied.rowsKept + " rows kept, " + applied.rowsDropped + " dropped", "ok");
+        // TEMPORARY DIAGNOSTIC: dump the cleaned CSV to the log so we can see
+        // exactly what is about to be sent to AGOL.
+        log("--- cleaned CSV (first 600 chars) ---", "agent");
+        log(applied.csv.slice(0, 600), "");
+        log("--- cleaned CSV total length: " + applied.csv.length + " chars, " +
+            (applied.csv.split("\n").length) + " lines ---", "agent");
 
         const note = result.notes || "Cleaned up your data.";
         const human = applied.rowsDropped > 0
@@ -727,7 +752,13 @@ Eucalyptus,85,-117.1610,32.7114`;
             loadAndAnalyze(cleanedBlob, displayName);
           },
           secondaryLabel: "Start over",
-          onSecondary: reset
+          onSecondary: reset,
+          extraLabel: "Download cleaned CSV",
+          onExtra: () => {
+            const base = displayName.replace(/\.csv$/i, "");
+            downloadText(base + "_cleaned.csv", applied.csv);
+            log("downloaded cleaned CSV for inspection", "ok");
+          }
         });
       } else if (result.status === "needs_input") {
         renderAgentMessage({
@@ -1302,14 +1333,37 @@ Eucalyptus,85,-117.1610,32.7114`;
   }
 
   async function publishViaBridge(title, snippet, tags, webMapJson) {
+    const payload = JSON.stringify({ title, snippet, tags, webMapJson });
+    log("bridge: POST " + payload.length + " bytes (title: " + title + ")", "agent");
+
     const r = await fetch(BRIDGE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, snippet, tags, webMapJson })
+      body: payload
     });
-    if (!r.ok) throw new Error(`Bridge HTTP ${r.status}`);
-    const data = await r.json();
-    if (!data.mapMakerUrl) throw new Error("Bridge response missing mapMakerUrl");
+    log("bridge: HTTP " + r.status, r.ok ? "ok" : "err");
+    if (!r.ok) {
+      const errBody = await r.text().catch(() => "(could not read body)");
+      log("bridge: error body: " + errBody.slice(0, 400), "err");
+      throw new Error(`Bridge HTTP ${r.status}`);
+    }
+
+    const rawText = await r.text();
+    log("bridge: raw response: " + rawText.slice(0, 500), "agent");
+
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (e) {
+      log("bridge: response was not valid JSON", "err");
+      throw new Error("Bridge returned a non-JSON response");
+    }
+
+    if (!data.mapMakerUrl) {
+      log("bridge: response JSON has no mapMakerUrl field. Keys: " + Object.keys(data).join(", "), "err");
+      throw new Error("Bridge response missing mapMakerUrl");
+    }
+    log("bridge: mapMakerUrl received, itemId=" + (data.itemId || "(none)"), "ok");
     return data;
   }
 
@@ -1586,11 +1640,24 @@ Eucalyptus,85,-117.1610,32.7114`;
   }
 
   function showResult(result, pointCount) {
+    // Guard: never show the success card unless we genuinely have a usable
+    // MapMaker URL. A missing or malformed URL means the publish did not
+    // actually succeed, even if we got this far.
+    const url = result && result.mapMakerUrl;
+    const looksValid = typeof url === "string" && /^https?:\/\//i.test(url);
+    if (!looksValid) {
+      log("showResult: no valid mapMakerUrl — refusing to show success card", "err");
+      showError("The map didn't finish publishing — no map link came back. Please try again.");
+      return;
+    }
+
     showStage("result");
     document.getElementById("resultDetail").textContent =
       `${pointCount} points published as ${state.style.name.toLowerCase()}`;
-    document.getElementById("resultCta").href = result.mapMakerUrl;
-    document.getElementById("resultMeta").textContent = `Item ID: ${result.itemId}`;
+    document.getElementById("resultCta").href = url;
+    document.getElementById("resultMeta").textContent =
+      result.itemId ? `Item ID: ${result.itemId}` : "Item ID: (not returned)";
+    log("showResult: success card shown, url=" + url, "ok");
   }
 
   function showError(message) {
