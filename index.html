@@ -376,7 +376,7 @@
   ];
 
   const FIELD_DEFS = {
-    color: { label: "Color points by", icon: "🎨", source: "categorical" },
+    color: { label: "Color points by", icon: "🎨", source: "color" },   // categorical OR numeric
     size:  { label: "Size points by",  icon: "📏", source: "numeric" },
     label: { label: "Label points with", icon: "🏷️", source: "categorical" },
   };
@@ -1180,6 +1180,68 @@ Eucalyptus,85,-117.1610,32.7114`;
     };
   }
 
+  // Sequential colour ramp for continuous numeric data (light -> dark).
+  // Used by buildClassBreaksRenderer when colouring by a number like depth.
+  const SEQUENTIAL_RAMP = [
+    [255, 255, 204, 255],
+    [255, 217, 142, 255],
+    [254, 153, 41, 255],
+    [217, 95, 14, 255],
+    [153, 52, 4, 255]
+  ];
+
+  // Colour a continuous numeric column by binning it into classes.
+  // Uses equal-interval breaks across the data range — simple, predictable,
+  // and good enough for fieldwork data. 5 classes by default.
+  function buildClassBreaksRenderer(field, features, numClasses) {
+    const n = numClasses || 5;
+    const values = features
+      .map(f => f.attributes[field])
+      .filter(v => v !== null && v !== undefined && v !== "" && !isNaN(v))
+      .map(Number);
+    if (values.length === 0) {
+      // nothing usable — fall back to a plain symbol
+      return { type: "simple", symbol: buildSimpleSymbol() };
+    }
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+
+    // Degenerate case: every value the same. One class, one colour.
+    if (min === max) {
+      return {
+        type: "classBreaks",
+        field,
+        minValue: min,
+        classBreakInfos: [{
+          classMinValue: min,
+          classMaxValue: max,
+          label: String(min),
+          symbol: buildSimpleSymbol(SEQUENTIAL_RAMP[SEQUENTIAL_RAMP.length - 1], 12)
+        }]
+      };
+    }
+
+    const span = (max - min) / n;
+    const round = (x) => Math.round(x * 100) / 100;
+    const classBreakInfos = [];
+    for (let i = 0; i < n; i++) {
+      const lo = min + span * i;
+      const hi = (i === n - 1) ? max : min + span * (i + 1);
+      classBreakInfos.push({
+        classMinValue: lo,
+        classMaxValue: hi,
+        label: `${round(lo)} – ${round(hi)}`,
+        symbol: buildSimpleSymbol(SEQUENTIAL_RAMP[i % SEQUENTIAL_RAMP.length], 12)
+      });
+    }
+    return {
+      type: "classBreaks",
+      field,
+      minValue: min,
+      classBreakInfos
+    };
+  }
+
   function buildUniqueRenderer(field, features) {
     const unique = new Set();
     for (const f of features) {
@@ -1219,17 +1281,26 @@ Eucalyptus,85,-117.1610,32.7114`;
   }
 
   function buildRenderer(style, choices, features, numeric) {
+    // Decide which kind of colour renderer the chosen colour column needs:
+    // a numeric column -> class-breaks (graduated colour ramp),
+    // a categorical column -> unique-value (one colour per category).
+    const colorIsNumeric = choices.color && numeric.includes(choices.color);
+    const buildColorRenderer = (field) =>
+      colorIsNumeric
+        ? buildClassBreaksRenderer(field, features)
+        : buildUniqueRenderer(field, features);
+
     switch (style.id) {
       case "pie_chart":
         return buildPieChartRenderer(numeric, features);
       case "categorical_size": {
-        const r = buildUniqueRenderer(choices.color, features);
+        const r = buildColorRenderer(choices.color);
         const sv = buildSizeVariable(choices.size, features);
         if (sv) r.visualVariables = [sv];
         return r;
       }
       case "categorical":
-        return buildUniqueRenderer(choices.color, features);
+        return buildColorRenderer(choices.color);
       case "graduated": {
         const r = { type: "simple", symbol: buildSimpleSymbol(), label: choices.size.replace(/_/g, " ") };
         const sv = buildSizeVariable(choices.size, features);
@@ -1517,18 +1588,37 @@ Eucalyptus,85,-117.1610,32.7114`;
     for (const fieldKey of state.style.fields) {
       const fieldDef = FIELD_DEFS[fieldKey];
       if (!fieldDef) continue;
-      const sourceList = fieldDef.source === "numeric" ? state.numeric : state.categorical;
+
+      // Which columns can feed this field?
+      //  source "numeric"     -> numeric columns only
+      //  source "categorical" -> categorical columns only
+      //  source "color"       -> BOTH: categorical (unique-value) and numeric (graduated)
+      let sourceList, optionsHtml, emptyHint;
+      if (fieldDef.source === "numeric") {
+        sourceList = state.numeric;
+        emptyHint = "no numeric columns in your data";
+        optionsHtml = sourceList.map(o => `<option value="${o}">${o.replace(/_/g, " ")}</option>`).join("");
+      } else if (fieldDef.source === "categorical") {
+        sourceList = state.categorical;
+        emptyHint = "no text columns in your data";
+        optionsHtml = sourceList.map(o => `<option value="${o}">${o.replace(/_/g, " ")}</option>`).join("");
+      } else { // "color" — both, shown in two labelled groups
+        sourceList = state.categorical.concat(state.numeric);
+        emptyHint = "no columns available to colour by";
+        const catOpts = state.categorical.map(o => `<option value="${o}">${o.replace(/_/g, " ")}</option>`).join("");
+        const numOpts = state.numeric.map(o => `<option value="${o}">${o.replace(/_/g, " ")} (number)</option>`).join("");
+        optionsHtml =
+          (state.categorical.length ? `<optgroup label="By category">${catOpts}</optgroup>` : "") +
+          (state.numeric.length ? `<optgroup label="By number (colour scale)">${numOpts}</optgroup>` : "");
+      }
 
       const row = document.createElement("div");
       row.className = "config-row";
 
       if (sourceList.length === 0) {
-        const hintText = fieldDef.source === "numeric"
-          ? "no numeric columns in your data"
-          : "no text columns in your data";
         row.innerHTML = `
           <div class="config-label"><span class="config-icon">${fieldDef.icon}</span>${fieldDef.label}</div>
-          <div style="flex: 1; color: #888; font-size: 13px; font-style: italic; padding: 8px 0;">${hintText}</div>
+          <div style="flex: 1; color: #888; font-size: 13px; font-style: italic; padding: 8px 0;">${emptyHint}</div>
         `;
         container.appendChild(row);
         state.fieldChoices[fieldKey] = null;
@@ -1539,7 +1629,7 @@ Eucalyptus,85,-117.1610,32.7114`;
         <div class="config-label"><span class="config-icon">${fieldDef.icon}</span>${fieldDef.label}</div>
         <select class="config-select" data-field="${fieldKey}">
           <option value="${NONE_VALUE}">— none —</option>
-          ${sourceList.map(opt => `<option value="${opt}">${opt.replace(/_/g, " ")}</option>`).join("")}
+          ${optionsHtml}
         </select>
       `;
       const select = row.querySelector("select");
@@ -1555,16 +1645,22 @@ Eucalyptus,85,-117.1610,32.7114`;
 
   function updateConfigSummary() {
     const c = state.fieldChoices;
+    // Describe colour differently for a number (colour scale) vs a category.
+    const colorIsNumeric = c.color && state.numeric.includes(c.color);
+    const colorPhrase = c.color
+      ? (colorIsNumeric ? `shaded by ${c.color}` : `colored by ${c.color}`)
+      : null;
+
     let summary = "";
     switch (state.style.id) {
       case "pie_chart":
         summary = `Each point will show a pie chart of ${state.numeric.length} numeric columns, sized by total.`;
         break;
       case "categorical_size":
-        summary = `Each point colored by ${c.color || "—"}, sized by ${c.size || "—"}.`;
+        summary = `Each point ${colorPhrase || "colored by —"}, sized by ${c.size || "—"}.`;
         break;
       case "categorical":
-        summary = `Each point colored by ${c.color || "—"}.`;
+        summary = `Each point ${colorPhrase || "colored by —"}.`;
         break;
       case "graduated":
         summary = `Each point sized by ${c.size || "—"}.`;
