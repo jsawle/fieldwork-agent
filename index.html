@@ -22,7 +22,7 @@
       --brand-primary-dark: var(--esri-blue-700);
       --brand-accent:       var(--esri-blue-300);
       --brand-tint:         var(--esri-blue-50);
-      --brand-header-bg:    #2b2b2b;            /* dark neutral, not pure black */
+      --brand-header-bg:    var(--esri-blue-700);  /* dark Esri blue */
       --brand-on-dark:      var(--esri-blue-100);
 
       --ink:        #1a1a1a;
@@ -42,7 +42,7 @@
 
     .header {
       background: var(--brand-header-bg);
-      border-bottom: 4px solid var(--brand-primary);
+      border-bottom: 4px solid var(--esri-blue-300);
       padding: 20px 32px;
       display: flex;
       align-items: center;
@@ -1224,10 +1224,10 @@ Eucalyptus,85,-117.1610,32.7114`;
       type: "esriSMS", style: "esriSMSCircle",
       color: fill,
       size: size || 12,
-      // Dark grey outline, slightly thicker than 1px so points lift off the
-      // busy NatGeo basemap. (ArcGIS esriSMS has no drop-shadow property;
-      // a defined dark outline is the supported way to add definition.)
-      outline: { color: [80, 80, 80, 255], width: 1.5 }
+      // Dark grey outline at 1px so points lift off the busy basemap.
+      // (ArcGIS esriSMS has no drop-shadow property; a defined dark outline
+      // is the supported way to add definition.)
+      outline: { color: [80, 80, 80, 255], width: 1 }
     };
   }
 
