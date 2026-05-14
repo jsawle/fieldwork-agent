@@ -441,6 +441,34 @@ Eucalyptus,85,-117.1610,32.7114`;
   // ----------------------------------------------------------------------
   // NEW: Local check
   // ----------------------------------------------------------------------
+  // Splits one CSV line into cells, respecting double-quoted fields (so a
+  // comma inside "..." is not treated as a column separator). Good enough
+  // for the coordinate-cell scan; the real parsing is still done by AGOL.
+  function splitCsvLine(line) {
+    const cells = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (ch === "," && !inQuotes) {
+        cells.push(cur);
+        cur = "";
+      } else {
+        cur += ch;
+      }
+    }
+    cells.push(cur);
+    return cells;
+  }
+
+  // A clean coordinate cell: optional leading minus, digits, optional single
+  // decimal point. Anything else (stray comma, degree symbol, blank, text,
+  // European decimal comma) fails and routes the file to the agent.
+  const CLEAN_COORD = /^-?\d+(\.\d+)?$/;
+
   async function localCheckCsvBlob(csvBlob) {
     const text = await csvBlob.text();
     if (!text || !text.trim()) return { clean: false, reason: "empty file" };
@@ -456,7 +484,7 @@ Eucalyptus,85,-117.1610,32.7114`;
       return { clean: false, reason: `delimiter looks like ${semis > commas ? "semicolon" : "tab"}` };
     }
 
-    const headers = headerLine.split(",").map(h => h.trim().toLowerCase());
+    const headers = splitCsvLine(headerLine).map(h => h.trim().toLowerCase());
     const latNames = ["lat", "latitude", "y", "y_coord", "ycoord"];
     const lonNames = ["lon", "long", "longitude", "lng", "x", "x_coord", "xcoord"];
     const latIdx = headers.findIndex(h => latNames.includes(h));
@@ -465,19 +493,28 @@ Eucalyptus,85,-117.1610,32.7114`;
       return { clean: false, reason: "no recognised lat/lon column headers" };
     }
 
-    const sampleRows = lines.slice(1, Math.min(lines.length, 6));
-    let bad = 0;
-    for (const row of sampleRows) {
-      const cols = row.split(",");
+    // Full-file scan — check EVERY data row's coordinate cells, not just a sample.
+    // Cheap even for 1000 rows; catches malformed coordinates buried deep in the file.
+    let badRows = 0;
+    let firstBadLine = null;
+    for (let i = 1; i < lines.length; i++) {
+      const cols = splitCsvLine(lines[i]);
       const latVal = (cols[latIdx] || "").trim();
       const lonVal = (cols[lonIdx] || "").trim();
-      if (!/^-?\d+(\.\d+)?$/.test(latVal) || !/^-?\d+(\.\d+)?$/.test(lonVal)) bad++;
-    }
-    if (bad > sampleRows.length / 2) {
-      return { clean: false, reason: "lat/lon values are not plain decimal numbers" };
+      if (!CLEAN_COORD.test(latVal) || !CLEAN_COORD.test(lonVal)) {
+        badRows++;
+        if (firstBadLine === null) firstBadLine = i + 1; // 1-indexed incl. header
+      }
     }
 
-    return { clean: true, reason: "lat/lon columns present and values look numeric" };
+    if (badRows > 0) {
+      return {
+        clean: false,
+        reason: `${badRows} row${badRows === 1 ? "" : "s"} have coordinate cells that aren't plain decimals (first at line ${firstBadLine})`
+      };
+    }
+
+    return { clean: true, reason: `all ${lines.length - 1} rows have clean decimal coordinates` };
   }
 
   // ----------------------------------------------------------------------
@@ -902,7 +939,12 @@ Eucalyptus,85,-117.1610,32.7114`;
         showLegend: true,
         layers: [{
           layerDefinition: layerDef,
-          featureSet: fcLayer.featureSet,
+          // Use the validated features (geometry-less rows already dropped),
+          // not fcLayer.featureSet which still contains them.
+          featureSet: {
+            ...fcLayer.featureSet,
+            features: features
+          },
           popupInfo,
           showLegend: true
         }]
@@ -949,14 +991,21 @@ Eucalyptus,85,-117.1610,32.7114`;
     return data;
   }
 
+  // Returns the subset of features that have valid point geometry.
+  // Throws if too few usable features remain. This protects every downstream
+  // step (computeExtent, renderers) from features AGOL couldn't geolocate.
   function validateFeatures(features) {
     if (features.length < 2) {
       throw new Error("Your file needs at least 2 rows of data with coordinates.");
     }
-    const withGeom = features.filter(f => f.geometry && typeof f.geometry.x === "number");
+    const withGeom = features.filter(f => f.geometry && typeof f.geometry.x === "number" && typeof f.geometry.y === "number");
+    if (withGeom.length < 2) {
+      throw new Error("Your file needs at least 2 rows with valid coordinates. Make sure your CSV has latitude/longitude columns with numeric values.");
+    }
     if (withGeom.length < features.length * 0.5) {
       throw new Error("Most rows don't have valid coordinates. Make sure your CSV has columns named latitude/longitude (or lat/lon) with numeric values.");
     }
+    return withGeom;
   }
 
   async function countCSVRows(csvBlob) {
@@ -1020,9 +1069,15 @@ Eucalyptus,85,-117.1610,32.7114`;
 
       const fcLayer = await generateFeatures(csvBlob, publishParams);
       state.fcLayer = fcLayer;
-      state.features = fcLayer.featureSet.features;
+      const allFeatures = fcLayer.featureSet.features;
       state.fields = fcLayer.layerDefinition.fields;
-      validateFeatures(state.features);
+      // validateFeatures returns only features with valid geometry — drop the rest
+      // so computeExtent and the renderers never see a geometry-less feature.
+      state.features = validateFeatures(allFeatures);
+      const droppedNoGeom = allFeatures.length - state.features.length;
+      if (droppedNoGeom > 0) {
+        log(`generate: ${droppedNoGeom} feature(s) had no geometry and were dropped`, "err");
+      }
 
       const { numeric, categorical } = classifyColumns(state.fields, state.features);
       state.numeric = numeric;
