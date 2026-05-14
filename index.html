@@ -5,19 +5,44 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MapMaker Fieldwork — Agent Build</title>
   <style>
+    /* ----------------------------------------------------------------
+       Esri colour palette — all brand colours live here as variables.
+       To re-theme the whole UI, change these; nothing else hardcodes colour.
+       Blue ramp supplied: C7EAFF / 50A7DA / 007AC2 / 00619B
+       ---------------------------------------------------------------- */
+    :root {
+      --esri-blue-50:  #E6F1FB;   /* lightest fill / selected-tile bg */
+      --esri-blue-100: #C7EAFF;   /* supplied light */
+      --esri-blue-300: #50A7DA;   /* supplied mid */
+      --esri-blue-500: #007AC2;   /* supplied primary — Esri signature blue */
+      --esri-blue-700: #00619B;   /* supplied dark */
+      --esri-blue-900: #042C53;   /* darkest — text on light-blue fills */
+
+      --brand-primary:      var(--esri-blue-500);
+      --brand-primary-dark: var(--esri-blue-700);
+      --brand-accent:       var(--esri-blue-300);
+      --brand-tint:         var(--esri-blue-50);
+      --brand-header-bg:    #2b2b2b;            /* dark neutral, not pure black */
+      --brand-on-dark:      var(--esri-blue-100);
+
+      --ink:        #1a1a1a;
+      --ink-muted:  #666;
+      --hairline:   #e2e2e2;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #f7f8f4;
-      color: #1a1a1a;
+      background: #f5f6f7;
+      color: var(--ink);
       line-height: 1.5;
       min-height: 100vh;
     }
 
     .header {
-      background: #000;
-      border-bottom: 4px solid #FFCC00;
+      background: var(--brand-header-bg);
+      border-bottom: 4px solid var(--brand-primary);
       padding: 20px 32px;
       display: flex;
       align-items: center;
@@ -26,9 +51,9 @@
     }
     .header-left { display: flex; align-items: baseline; gap: 16px; }
     .header-title { color: white; font-size: 28px; font-weight: 500; letter-spacing: 0.5px; }
-    .header-sub { color: #FFCC00; font-size: 14px; letter-spacing: 0.5px; }
+    .header-sub { color: var(--brand-on-dark); font-size: 14px; letter-spacing: 0.5px; }
     .build-badge {
-      background: #FFCC00; color: #000;
+      background: var(--brand-primary); color: #fff;
       font-size: 11px; font-weight: 700;
       letter-spacing: 0.08em; text-transform: uppercase;
       padding: 4px 10px; border-radius: 4px;
@@ -44,8 +69,8 @@
       margin-bottom: 24px;
     }
 
-    h2 { font-size: 18px; margin-bottom: 8px; color: #1a1a1a; }
-    .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; }
+    h2 { font-size: 18px; margin-bottom: 8px; color: var(--ink); }
+    .subtitle { color: var(--ink-muted); font-size: 14px; margin-bottom: 24px; }
 
     .dropzone {
       border: 2px dashed #c4c4c4;
@@ -57,8 +82,8 @@
       background: #fafafa;
     }
     .dropzone:hover, .dropzone.dragover {
-      border-color: #FFCC00;
-      background: #fffdf0;
+      border-color: var(--brand-primary);
+      background: var(--brand-tint);
     }
     .dropzone-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
     .dropzone-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
@@ -71,13 +96,13 @@
     }
 
     .btn {
-      background: #FFCC00; color: #000;
+      background: var(--brand-primary); color: #fff;
       border: none; padding: 10px 24px;
       border-radius: 6px; font-size: 14px;
       font-weight: 600; cursor: pointer;
       transition: background 0.15s ease;
     }
-    .btn:hover { background: #f0bf00; }
+    .btn:hover { background: var(--brand-primary-dark); }
     .btn:disabled { background: #ddd; color: #999; cursor: not-allowed; }
     .btn-secondary { background: white; color: #444; border: 1px solid #c4c4c4; }
     .btn-secondary:hover { background: #f5f5f5; }
@@ -90,24 +115,40 @@
       color: #888; margin-bottom: 12px;
     }
 
+    /* ---- Map-style selector: single non-wrapping row of compact tiles ---- */
     .style-options {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 12px;
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
     }
     .style-option {
+      flex: 1 1 0;
+      min-width: 0;                 /* allow tiles to shrink on narrow screens */
       border: 2px solid #ddd; border-radius: 6px;
-      padding: 14px; cursor: pointer;
+      padding: 10px 6px; cursor: pointer;
       transition: all 0.15s ease;
-      background: white; text-align: left;
+      background: white; text-align: center;
     }
-    .style-option:hover { border-color: #FFCC00; }
-    .style-option.selected { border-color: #FFCC00; background: #fffdf0; }
+    .style-option:hover { border-color: var(--brand-accent); }
+    .style-option.selected {
+      border-color: var(--brand-primary);
+      background: var(--brand-tint);
+    }
     .style-option.disabled { opacity: 0.4; cursor: not-allowed; }
     .style-option.disabled:hover { border-color: #ddd; }
-    .style-option-icon { font-size: 22px; margin-bottom: 6px; }
-    .style-option-name { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
-    .style-option-hint { font-size: 12px; color: #888; }
+    .style-option-icon { font-size: 20px; margin-bottom: 4px; display: block; }
+    .style-option-name {
+      font-size: 11.5px; font-weight: 600; line-height: 1.25;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    /* description for the selected style only, shown below the row */
+    .style-description {
+      font-size: 13px; color: var(--ink-muted);
+      background: var(--brand-tint);
+      border-left: 3px solid var(--brand-primary);
+      padding: 8px 12px; border-radius: 0 4px 4px 0;
+      margin-bottom: 16px;
+    }
 
     .config-row {
       display: flex; align-items: center; gap: 12px;
@@ -123,18 +164,18 @@
     }
     .config-summary {
       color: #555; font-size: 13px;
-      padding: 12px; background: #f7f8f4;
+      padding: 12px; background: #f5f6f7;
       border-radius: 4px; margin-top: 16px;
     }
     .auto-publish-banner {
-      color: #b78400; font-size: 13px;
+      color: var(--brand-primary-dark); font-size: 13px;
       font-style: italic; margin-top: 8px;
     }
 
     .progress { display: flex; align-items: center; gap: 12px; padding: 16px 0; }
     .spinner {
       width: 20px; height: 20px;
-      border: 2px solid #eee; border-top-color: #FFCC00;
+      border: 2px solid #eee; border-top-color: var(--brand-primary);
       border-radius: 50%; animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -143,20 +184,20 @@
     .progress-step-done::before { content: "✓ "; color: #2a8f37; }
 
     .result-card {
-      background: linear-gradient(180deg, #FFCC00 0%, #f0bf00 100%);
-      color: #000; padding: 32px;
+      background: linear-gradient(180deg, var(--esri-blue-500) 0%, var(--esri-blue-700) 100%);
+      color: #fff; padding: 32px;
       border-radius: 8px; text-align: center;
     }
     .result-title { font-size: 22px; font-weight: 600; margin-bottom: 8px; }
-    .result-detail { font-size: 14px; margin-bottom: 24px; opacity: 0.85; }
+    .result-detail { font-size: 14px; margin-bottom: 24px; opacity: 0.9; }
     .result-cta {
-      display: inline-block; background: black; color: white;
+      display: inline-block; background: #fff; color: var(--esri-blue-700);
       padding: 14px 32px; border-radius: 6px;
       font-size: 16px; font-weight: 600;
       text-decoration: none; transition: opacity 0.15s ease;
     }
     .result-cta:hover { opacity: 0.85; }
-    .result-meta { margin-top: 16px; font-size: 12px; color: #555; font-family: monospace; }
+    .result-meta { margin-top: 16px; font-size: 12px; color: rgba(255,255,255,0.85); font-family: monospace; }
 
     .error {
       background: #fff4f4; border-left: 4px solid #d33;
@@ -165,29 +206,29 @@
     }
     .error strong { display: block; margin-bottom: 4px; }
 
-    /* Agent-specific */
+    /* Agent-specific — kept on the blue family so it reads as part of the tool */
     .agent-card {
-      background: #fffaeb;
-      border: 1px solid #f0d68a;
-      border-left: 4px solid #FFCC00;
+      background: var(--brand-tint);
+      border: 1px solid var(--esri-blue-100);
+      border-left: 4px solid var(--brand-primary);
       border-radius: 8px;
       padding: 20px 24px;
       margin-bottom: 16px;
     }
     .agent-label {
       font-size: 11px; text-transform: uppercase;
-      letter-spacing: 0.08em; color: #b78400;
+      letter-spacing: 0.08em; color: var(--brand-primary-dark);
       font-weight: 700; margin-bottom: 10px;
     }
     .agent-message { font-size: 15px; line-height: 1.6; margin-bottom: 16px; color: #333; }
     .agent-reply-input {
       width: 100%; padding: 10px 12px;
-      border: 1px solid #f0d68a; border-radius: 6px;
+      border: 1px solid var(--esri-blue-100); border-radius: 6px;
       font-size: 14px; margin-bottom: 12px; background: white;
     }
-    .agent-reply-input:focus { outline: none; border-color: #FFCC00; }
+    .agent-reply-input:focus { outline: none; border-color: var(--brand-primary); }
     .agent-progress { display: flex; align-items: center; gap: 12px; }
-    .agent-progress .progress-text { color: #b78400; }
+    .agent-progress .progress-text { color: var(--brand-primary-dark); }
 
     .log-toggle { margin-top: 24px; font-size: 12px; color: #888; }
     .log-toggle summary { cursor: pointer; }
@@ -261,6 +302,7 @@
     <div class="config-section">
       <h3>Map style</h3>
       <div class="style-options" id="styleOptions"></div>
+      <div class="style-description" id="styleDescription"></div>
     </div>
 
     <div class="config-section" id="fieldsSection">
@@ -378,10 +420,19 @@
     }
   }
 
+  // Categorical palette — used by "Map by type" (unique-value renderer).
+  // Categories need DISTINGUISHABLE hues, not a single-hue ramp, so this stays
+  // multi-hue — but swapped from the old NatGeo-ish set to Esri's categorical
+  // colour family (the "Esri Colors" qualitative scheme).
   const PALETTE = [
-    [102, 194, 165, 255], [252, 141,  98, 255], [141, 160, 203, 255],
-    [231, 138, 195, 255], [166, 216,  84, 255], [255, 217,  47, 255],
-    [229, 196, 148, 255], [179, 179, 179, 255]
+    [  0, 122, 194, 255],   // Esri blue
+    [255, 170,  0, 255],    // amber
+    [ 76, 175,  80, 255],   // green
+    [216,  86,  48, 255],   // coral/red
+    [142,  68, 173, 255],   // purple
+    [  0, 168, 168, 255],   // teal
+    [233, 113, 184, 255],   // pink
+    [121, 121, 121, 255]    // grey
   ];
 
   const NUMERIC_TYPES = new Set(["esriFieldTypeInteger", "esriFieldTypeDouble", "esriFieldTypeSmallInteger"]);
@@ -1227,12 +1278,14 @@ Eucalyptus,85,-117.1610,32.7114`;
 
   // Sequential colour ramp for continuous numeric data (light -> dark).
   // Used by buildClassBreaksRenderer when colouring by a number like depth.
+  // Esri blue family: the 4 supplied swatch colours plus the lightest blue
+  // (E6F1FB) prepended, giving a clean 5-step light-to-dark progression.
   const SEQUENTIAL_RAMP = [
-    [255, 255, 204, 255],
-    [255, 217, 142, 255],
-    [254, 153, 41, 255],
-    [217, 95, 14, 255],
-    [153, 52, 4, 255]
+    [230, 241, 251, 255],   // #E6F1FB  lightest
+    [199, 234, 255, 255],   // #C7EAFF  supplied
+    [ 80, 167, 218, 255],   // #50A7DA  supplied
+    [  0, 122, 194, 255],   // #007AC2  supplied (Esri signature blue)
+    [  0,  97, 155, 255]    // #00619B  supplied darkest
   ];
 
   // Colour a continuous numeric column by binning it into classes.
@@ -1595,6 +1648,12 @@ Eucalyptus,85,-117.1610,32.7114`;
     setupAutoPublish();
   }
 
+  // Short label for the compact tile (the full name goes in the description).
+  // "Map by type" -> "By type"; "Map locations" -> "Locations"; "Pie charts" -> "Pie charts"
+  function shortStyleLabel(name) {
+    return name.replace(/^Map\s+/i, (m) => "").replace(/^./, c => c.toUpperCase());
+  }
+
   function renderStyleOptions() {
     const container = document.getElementById("styleOptions");
     container.innerHTML = "";
@@ -1603,9 +1662,8 @@ Eucalyptus,85,-117.1610,32.7114`;
       const div = document.createElement("div");
       div.className = "style-option" + (style.id === state.style.id ? " selected" : "") + (available ? "" : " disabled");
       div.innerHTML = `
-        <div class="style-option-icon">${style.icon}</div>
-        <div class="style-option-name">${style.name}</div>
-        <div class="style-option-hint">${style.hint}</div>
+        <span class="style-option-icon">${style.icon}</span>
+        <span class="style-option-name">${shortStyleLabel(style.name)}</span>
       `;
       if (available) {
         div.addEventListener("click", () => {
@@ -1618,6 +1676,11 @@ Eucalyptus,85,-117.1610,32.7114`;
         });
       }
       container.appendChild(div);
+    }
+    // Description below the row — for the currently selected style only.
+    const desc = document.getElementById("styleDescription");
+    if (desc && state.style) {
+      desc.textContent = `${state.style.name} — ${state.style.hint}`;
     }
   }
 
