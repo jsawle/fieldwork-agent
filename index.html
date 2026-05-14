@@ -463,7 +463,7 @@
   const FIELD_DEFS = {
     color: { label: "Color points by", icon: "🎨", source: "color" },   // categorical OR numeric
     size:  { label: "Size points by",  icon: "📏", source: "numeric" },
-    label: { label: "Label points with", icon: "🏷️", source: "categorical" },
+    label: { label: "Label points with", icon: "🏷️", source: "label" },  // categorical OR numeric
   };
 
   const SAMPLE_CSV = `Species,DBH_cm,Longitude,Latitude
@@ -1207,7 +1207,9 @@ Eucalyptus,85,-117.1610,32.7114`;
     const choices = { color: null, size: null, label: null };
     if (style.fields.includes("color")) choices.color = categorical[0] || null;
     if (style.fields.includes("size"))  choices.size  = numeric[0] || null;
-    if (style.fields.includes("label")) choices.label = categorical[0] || null;
+    // Label: prefer a text column, but fall back to a numeric one so a
+    // numeric-only file still gets a sensible default label.
+    if (style.fields.includes("label")) choices.label = categorical[0] || numeric[0] || null;
     return choices;
   }
 
@@ -1701,7 +1703,8 @@ Eucalyptus,85,-117.1610,32.7114`;
       // Which columns can feed this field?
       //  source "numeric"     -> numeric columns only
       //  source "categorical" -> categorical columns only
-      //  source "color"       -> BOTH: categorical (unique-value) and numeric (graduated)
+      //  source "color"       -> BOTH: categorical (unique-value) and numeric (graduated colour)
+      //  source "label"       -> BOTH: any column can be shown as a text label
       let sourceList, optionsHtml, emptyHint;
       if (fieldDef.source === "numeric") {
         sourceList = state.numeric;
@@ -1711,6 +1714,15 @@ Eucalyptus,85,-117.1610,32.7114`;
         sourceList = state.categorical;
         emptyHint = "no text columns in your data";
         optionsHtml = sourceList.map(o => `<option value="${o}">${o.replace(/_/g, " ")}</option>`).join("");
+      } else if (fieldDef.source === "label") {
+        // both — any column can be a label; no "colour scale" wording here
+        sourceList = state.categorical.concat(state.numeric);
+        emptyHint = "no columns available to label by";
+        const catOpts = state.categorical.map(o => `<option value="${o}">${o.replace(/_/g, " ")}</option>`).join("");
+        const numOpts = state.numeric.map(o => `<option value="${o}">${o.replace(/_/g, " ")} (number)</option>`).join("");
+        optionsHtml =
+          (state.categorical.length ? `<optgroup label="Text columns">${catOpts}</optgroup>` : "") +
+          (state.numeric.length ? `<optgroup label="Number columns">${numOpts}</optgroup>` : "");
       } else { // "color" — both, shown in two labelled groups
         sourceList = state.categorical.concat(state.numeric);
         emptyHint = "no columns available to colour by";
